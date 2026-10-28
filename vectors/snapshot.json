@@ -1,0 +1,680 @@
+{
+  "contract": 1,
+  "description": "Directory snapshot format and member resolution (wire contract, sections 3 and 5). \"format\" cases apply each change to a copy of \"snapshot\" (path is a list of keys and indexes; [] is the whole document; remove deletes the key) and parse it: a valid one parses, an invalid one is refused with the reason. \"members\" cases resolve the identity headers (lower-case names) for the app against \"snapshot\" unchanged. Freshness, generation and file trust are tested per implementation, not here.",
+  "snapshot": {
+    "format": 1,
+    "household": "smith",
+    "generation": 7,
+    "written_at": "2026-10-28T19:00:00.000Z",
+    "global_epoch": 2,
+    "keys": [
+      {
+        "kid": "k1",
+        "public_key": "9P6JucSH8HNTjvYBvf546IIUEJo8CimO034-4ug6DcI"
+      },
+      {
+        "kid": "k2",
+        "public_key": "VlFlwA8Uvo6SiEMeu2lmk_HerQxTmZ5Sn5Ze2snBWww"
+      }
+    ],
+    "members": [
+      {
+        "user_id": "1001",
+        "member_id": "m_parent",
+        "login": "parent@example.com",
+        "name": "Parent",
+        "role": "parent",
+        "status": "active",
+        "epoch": 4,
+        "apps": [
+          "family-dinner",
+          "family-pulse",
+          "home-source"
+        ]
+      },
+      {
+        "user_id": "1002",
+        "member_id": "m_kid",
+        "login": "kid@example.com",
+        "name": "Kid",
+        "role": "kid",
+        "status": "active",
+        "epoch": 1,
+        "apps": [
+          "family-dinner"
+        ]
+      },
+      {
+        "user_id": "1003",
+        "member_id": "m_gone",
+        "login": "former@example.com",
+        "name": "Former",
+        "role": "parent",
+        "status": "disabled",
+        "epoch": 9,
+        "apps": [
+          "family-dinner",
+          "family-pulse"
+        ]
+      },
+      {
+        "user_id": "1004",
+        "member_id": "m_odd",
+        "login": "tagged-devices",
+        "name": "Odd",
+        "role": "parent",
+        "status": "active",
+        "epoch": 0,
+        "apps": [
+          "family-pulse"
+        ]
+      }
+    ]
+  },
+  "format": [
+    {
+      "name": "a valid snapshot",
+      "changes": [],
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "unknown fields are ignored",
+      "changes": [
+        {
+          "path": [
+            "extra"
+          ],
+          "value": {
+            "any": "thing"
+          }
+        },
+        {
+          "path": [
+            "members",
+            0,
+            "extra"
+          ],
+          "value": 1
+        }
+      ],
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "no members yet",
+      "changes": [
+        {
+          "path": [
+            "members"
+          ],
+          "value": []
+        }
+      ],
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "not an object",
+      "changes": [
+        {
+          "path": [],
+          "value": []
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "another format",
+      "changes": [
+        {
+          "path": [
+            "format"
+          ],
+          "value": 2
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "format"
+      }
+    },
+    {
+      "name": "format as text",
+      "changes": [
+        {
+          "path": [
+            "format"
+          ],
+          "value": "1"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "format"
+      }
+    },
+    {
+      "name": "no household",
+      "changes": [
+        {
+          "path": [
+            "household"
+          ],
+          "remove": true
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "generation zero",
+      "changes": [
+        {
+          "path": [
+            "generation"
+          ],
+          "value": 0
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "generation not whole",
+      "changes": [
+        {
+          "path": [
+            "generation"
+          ],
+          "value": 7.5
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "generation as text",
+      "changes": [
+        {
+          "path": [
+            "generation"
+          ],
+          "value": "7"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "written_at not a time",
+      "changes": [
+        {
+          "path": [
+            "written_at"
+          ],
+          "value": "yesterday"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "negative global epoch",
+      "changes": [
+        {
+          "path": [
+            "global_epoch"
+          ],
+          "value": -1
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "keys not a list",
+      "changes": [
+        {
+          "path": [
+            "keys"
+          ],
+          "value": {
+            "k1": "9P6JucSH8HNTjvYBvf546IIUEJo8CimO034-4ug6DcI"
+          }
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "key too short",
+      "changes": [
+        {
+          "path": [
+            "keys",
+            0,
+            "public_key"
+          ],
+          "value": "9P6JucSH8HNTjvYBvf54"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "key in standard base64",
+      "changes": [
+        {
+          "path": [
+            "keys",
+            0,
+            "public_key"
+          ],
+          "value": "9P6JucSH8HNTjvYBvf546IIUEJo8CimO034+4ug6DcI="
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "key without kid",
+      "changes": [
+        {
+          "path": [
+            "keys",
+            0,
+            "kid"
+          ],
+          "remove": true
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "two keys share a kid",
+      "changes": [
+        {
+          "path": [
+            "keys",
+            1,
+            "kid"
+          ],
+          "value": "k1"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "members not a list",
+      "changes": [
+        {
+          "path": [
+            "members"
+          ],
+          "value": {}
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member without user_id",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "user_id"
+          ],
+          "remove": true
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member user_id as a number",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "user_id"
+          ],
+          "value": 1001
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member without member_id",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "member_id"
+          ],
+          "value": ""
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member role administrator (Home Base only, D10)",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "role"
+          ],
+          "value": "administrator"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member status pending",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "status"
+          ],
+          "value": "pending"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member epoch missing",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "epoch"
+          ],
+          "remove": true
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member apps as \"all\" (Home Base writes the list out)",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "apps"
+          ],
+          "value": "all"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "member apps with an empty ID",
+      "changes": [
+        {
+          "path": [
+            "members",
+            0,
+            "apps"
+          ],
+          "value": [
+            "family-dinner",
+            ""
+          ]
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "two members share a user_id",
+      "changes": [
+        {
+          "path": [
+            "members",
+            1,
+            "user_id"
+          ],
+          "value": "1001"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "two members share a login",
+      "changes": [
+        {
+          "path": [
+            "members",
+            1,
+            "login"
+          ],
+          "value": "parent@example.com"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    }
+  ],
+  "members": [
+    {
+      "name": "a parent on an app they use",
+      "appId": "family-pulse",
+      "headers": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com",
+        "x-sovereign-name": "Parent"
+      },
+      "expect": {
+        "member_id": "m_parent"
+      }
+    },
+    {
+      "name": "the display name plays no part",
+      "appId": "family-pulse",
+      "headers": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com",
+        "x-sovereign-name": "Someone Else"
+      },
+      "expect": {
+        "member_id": "m_parent"
+      }
+    },
+    {
+      "name": "a kid on an app they use",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "1002",
+        "x-sovereign-login": "kid@example.com"
+      },
+      "expect": {
+        "member_id": "m_kid"
+      }
+    },
+    {
+      "name": "a kid on an app they have no access to",
+      "appId": "family-pulse",
+      "headers": {
+        "x-sovereign-user-id": "1002",
+        "x-sovereign-login": "kid@example.com"
+      },
+      "expect": {
+        "reason": "no_access"
+      }
+    },
+    {
+      "name": "no headers",
+      "appId": "family-dinner",
+      "headers": {},
+      "expect": {
+        "reason": "no_identity"
+      }
+    },
+    {
+      "name": "a login without a user ID",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-login": "parent@example.com"
+      },
+      "expect": {
+        "reason": "no_identity"
+      }
+    },
+    {
+      "name": "a user ID without a login",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "1001"
+      },
+      "expect": {
+        "reason": "no_identity"
+      }
+    },
+    {
+      "name": "empty headers",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "",
+        "x-sovereign-login": ""
+      },
+      "expect": {
+        "reason": "no_identity"
+      }
+    },
+    {
+      "name": "a tagged device",
+      "appId": "family-pulse",
+      "headers": {
+        "x-sovereign-user-id": "1004",
+        "x-sovereign-login": "tagged-devices"
+      },
+      "expect": {
+        "reason": "tagged"
+      }
+    },
+    {
+      "name": "an unknown user ID",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "9999",
+        "x-sovereign-login": "stranger@example.com"
+      },
+      "expect": {
+        "reason": "unknown_user"
+      }
+    },
+    {
+      "name": "a known login on a new account (login reassigned)",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "9999",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "expect": {
+        "reason": "unknown_user"
+      }
+    },
+    {
+      "name": "a user ID with another member's login",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "1002",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "expect": {
+        "reason": "login_mismatch"
+      }
+    },
+    {
+      "name": "a login in other letter case",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "Parent@example.com"
+      },
+      "expect": {
+        "reason": "login_mismatch"
+      }
+    },
+    {
+      "name": "a disabled member",
+      "appId": "family-dinner",
+      "headers": {
+        "x-sovereign-user-id": "1003",
+        "x-sovereign-login": "former@example.com"
+      },
+      "expect": {
+        "reason": "disabled"
+      }
+    }
+  ]
+}

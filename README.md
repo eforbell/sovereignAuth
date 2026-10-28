@@ -42,6 +42,27 @@ http.createServer((req, res) => {
 
 `mode` is `enforce` (answer 403 and stop), `report` (log what enforce would refuse, then go on) or `off`. The core, `guard.check({ method, headers })`, returns `{ allowed: true }` or `{ allowed: false, status: 403, reason, message }` for any other framework.
 
+## Who is asking
+
+In tailnet mode the member comes from the identity headers nginx sets, looked up in the directory snapshot Home Base publishes (contract, sections 2, 3 and 5).
+
+```js
+const { createIdentity, createSnapshotReader } = require('sovereign-auth');
+
+const identity = createIdentity({
+  appId: 'family-pulse',
+  mode: process.env.SOVEREIGN_AUTH_MODE,          // 'local' or 'tailnet'; anything else throws
+  listen: process.env.SOVEREIGN_LISTEN,           // tailnet mode requires unix:<socket>
+  reader: createSnapshotReader({ homeBaseUid: Number(process.env.SOVEREIGN_HOMEBASE_UID) }),
+});
+
+const { member, reason } = identity.identify(req.headers);
+// member: { memberId, userId, login, name, role, status, epoch, apps } or null, with a reason such as
+// 'no_identity', 'unknown_user', 'login_mismatch', 'disabled', 'no_access' or 'no_snapshot'.
+```
+
+The reader trusts the snapshot only while the file and its directory belong to the Home Base user and nothing on the path is a symlink or writable by anyone else; it refuses a snapshot older than 120 seconds or older than one it has already seen.
+
 ## Tests and conformance vectors
 
 ```bash
