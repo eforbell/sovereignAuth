@@ -1,0 +1,1565 @@
+{
+  "contract": "docs/wire-contract.md, sections 6 to 9",
+  "description": "Tokens, the assurance cookie, the assurance policy and action tokens. TEST KEYS ONLY: signing_keys are Ed25519 seeds (base64url, 32 bytes) that exist for these vectors; never use them anywhere else. A token case gives either a literal \"token\" or \"claims\" to sign: the base claims of that kind, with \"set\" fields replaced and \"remove\" fields deleted, signed by \"sign_with\" (default: the key its kid names). \"token_transform\" then edits the signed token (\"pad_payload\", \"respell_signature\" (the same 64 bytes, a different spelling), \"extra_part\", \"drop_signature\", \"version_v2\", \"swap_payload_from:<case name>\"). Times are seconds; \"now\" is the verifier's clock. \"snapshot\" is a format-1 snapshot (section 5) whose keys are the public halves of k1 and k2; \"other\" is a key the snapshot does not hold. Assurance cases run check(policy, request, { target }) for the app \"app\" on \"hostname\", with the member from the identity headers resolved against \"snapshot\" and \"administrators\" as the members isAdministrator accepts. A case's \"cookie\" is the Cookie header, where \"<token>\" is replaced by the signed token. \"action\" goes in X-Sovereign-Action-Token. In action claims \"dig\": \"<digest>\" means the digest of the case's own request and target. \"redeem\" is what Home Base answers (redeemed, replayed, not_authorized, invalid, unavailable); \"redeem_calls\" is how many times the app may ask.",
+  "now": 1793300000,
+  "hostname": "smith-pulse.example-tailnet.ts.net",
+  "app": "family-pulse",
+  "signing_keys": {
+    "k1": "jtut_ufefkZoPE16j4S71S9u2V64HX8gHvoZCipJumI",
+    "k2": "tTQ944NbvRVfGJAdI46jcf-xenWb6wuC5WFuA2ssAqY",
+    "other": "jctcguuWVLXyD-ZUbMNbRjiGu6XYGH13Qkoc46r7BWU"
+  },
+  "snapshot": {
+    "format": 1,
+    "household": "smith",
+    "generation": 9,
+    "written_at": "2026-10-29T18:53:20.000Z",
+    "global_epoch": 3,
+    "keys": [
+      {
+        "kid": "k1",
+        "public_key": "kphiRlGd65YK2AMr0JnoRiVWb4k9EWPS0wjlym9-CeY"
+      },
+      {
+        "kid": "k2",
+        "public_key": "O_5uCigtT2-tlWPLBNDJsTbbosLw7Xvlm9cmdir0VBs"
+      }
+    ],
+    "members": [
+      {
+        "user_id": "1001",
+        "member_id": "m_parent",
+        "login": "parent@example.com",
+        "name": "Parent",
+        "role": "parent",
+        "status": "active",
+        "epoch": 4,
+        "apps": [
+          "family-pulse",
+          "home-base"
+        ]
+      },
+      {
+        "user_id": "1002",
+        "member_id": "m_kid",
+        "login": "kid@example.com",
+        "name": "Kid",
+        "role": "kid",
+        "status": "active",
+        "epoch": 1,
+        "apps": [
+          "family-pulse"
+        ]
+      }
+    ]
+  },
+  "administrators": [
+    "1001"
+  ],
+  "base_claims": {
+    "assurance": {
+      "typ": "assurance",
+      "kid": "k1",
+      "household": "smith",
+      "aud": "smith-pulse.example-tailnet.ts.net",
+      "sub": "1001",
+      "sid": "s_1",
+      "cred": "c_1",
+      "kind": "synced",
+      "epoch": 4,
+      "global_epoch": 3,
+      "auth_time": 1793299940,
+      "iat": 1793299940,
+      "exp": 1793386400
+    },
+    "action": {
+      "typ": "action",
+      "kid": "k1",
+      "household": "smith",
+      "aud": "smith-pulse.example-tailnet.ts.net",
+      "sub": "1001",
+      "kind": "hardware",
+      "epoch": 4,
+      "global_epoch": 3,
+      "app": "family-pulse",
+      "act": "privileged-plan",
+      "tgt": "backup 2026-10-28T02:00Z",
+      "dig": "<digest>",
+      "jti": "j_1",
+      "iat": 1793299995,
+      "exp": 1793300055
+    }
+  },
+  "tokens": [
+    {
+      "name": "valid",
+      "kind": "assurance",
+      "claims": {},
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "signed by a key the snapshot does not hold",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "kid": "other"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "unknown_kid"
+      }
+    },
+    {
+      "name": "kid names k1, signed with k2",
+      "kind": "assurance",
+      "claims": {},
+      "sign_with": "k2",
+      "expect": {
+        "ok": false,
+        "reason": "bad_signature"
+      }
+    },
+    {
+      "name": "payload from another token under this signature",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "swap_payload_from:expired",
+      "expect": {
+        "ok": false,
+        "reason": "bad_signature"
+      }
+    },
+    {
+      "name": "expired",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "exp": 1793299999
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "expires this second",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "exp": 1793300000
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "issued 30 s in the future",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "iat": 1793300030,
+          "auth_time": 1793300030
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "issued 31 s in the future",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "iat": 1793300031,
+          "auth_time": 1793300031
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "not_yet_valid"
+      }
+    },
+    {
+      "name": "no kid",
+      "kind": "assurance",
+      "claims": {
+        "remove": [
+          "kid"
+        ]
+      },
+      "sign_with": "k1",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "no exp",
+      "kind": "assurance",
+      "claims": {
+        "remove": [
+          "exp"
+        ]
+      },
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "iat as text",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "iat": "1793300000"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "fractional exp",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "exp": 1793300000.5
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "an algorithm field is just an unknown field",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "alg": "none"
+        }
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "base64 padding on the payload",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "pad_payload",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "the signature spelled with spare bits set",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "respell_signature",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "four parts",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "extra_part",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "no signature",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "drop_signature",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "version v2",
+      "kind": "assurance",
+      "claims": {},
+      "token_transform": "version_v2",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "longer than 4096 characters",
+      "kind": "assurance",
+      "claims": {
+        "set": {
+          "pad": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "payload is a JSON array",
+      "token": "v1.WzFd.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "payload is not JSON",
+      "token": "v1.e2tpZA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "empty",
+      "token": "",
+      "expect": {
+        "ok": false,
+        "reason": "malformed"
+      }
+    }
+  ],
+  "digests": [
+    {
+      "method": "POST",
+      "url": "/api/plans?dry=0",
+      "body": "{\"plan\":\"restore\"}",
+      "target": "backup 2026-10-28T02:00Z",
+      "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+    },
+    {
+      "method": "POST",
+      "url": "/api/plans",
+      "body": "",
+      "target": "",
+      "digest": "LHUI9FA-d4_rJW79u29_q134Id-dUnbH4AVtbPvgkJ0"
+    },
+    {
+      "method": "delete",
+      "url": "/api/credentials/c_9",
+      "body": "",
+      "target": "c_9",
+      "digest": "4gAxzwunbr_9d64SqfgotlOj57vcivXf2bgZcu69fRo"
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes",
+      "body": "{\"text\":\"café\"}",
+      "target": "note é",
+      "digest": "Lg_yTQobx0xk5cE7plYspQMYYSqJFMaPxuqgh6QCIgk"
+    }
+  ],
+  "assurance": [
+    {
+      "name": "tailnet: a member is enough",
+      "policy": "use-app",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "expect": {
+        "allowed": true,
+        "level": "tailnet"
+      }
+    },
+    {
+      "name": "tailnet: no identity headers",
+      "policy": "use-app",
+      "identity": {},
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "expect": {
+        "allowed": false,
+        "status": 403,
+        "body": {
+          "error": "not_a_member",
+          "reason": "no_identity"
+        },
+        "reason": "no_identity"
+      }
+    },
+    {
+      "name": "session: valid cookie",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": true,
+        "level": "session"
+      }
+    },
+    {
+      "name": "session: valid cookie among others",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "theme=dark; __Host-sv_assurance=<token>; sv_other=1",
+      "claims": {},
+      "expect": {
+        "allowed": true,
+        "level": "session"
+      }
+    },
+    {
+      "name": "session: no cookie",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "no_cookie"
+      }
+    },
+    {
+      "name": "session: unprefixed name, as a sibling could plant it",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "no_cookie"
+      }
+    },
+    {
+      "name": "session: prefix in another letter case",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "no_cookie"
+      }
+    },
+    {
+      "name": "session: tossed unprefixed cookie beside a valid one is ignored",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "sv_assurance=forged; __Host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": true,
+        "level": "session"
+      }
+    },
+    {
+      "name": "session: two prefixed cookies",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>; __Host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "duplicate_cookie"
+      }
+    },
+    {
+      "name": "session: expired",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "exp": 1793299999
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "session: another hostname's cookie",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "aud": "smith-home.example-tailnet.ts.net"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "wrong_audience"
+      }
+    },
+    {
+      "name": "session: stale member epoch",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "epoch": 3
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "stale_epoch"
+      }
+    },
+    {
+      "name": "session: stale global epoch",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "global_epoch": 2
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "stale_global_epoch"
+      }
+    },
+    {
+      "name": "session: another household",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "household": "jones"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "wrong_household"
+      }
+    },
+    {
+      "name": "session: another member's cookie",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1002",
+        "x-sovereign-login": "kid@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "wrong_member"
+      }
+    },
+    {
+      "name": "session: an action token as the cookie",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "typ": "action"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "wrong_type"
+      }
+    },
+    {
+      "name": "session: unknown kid",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "kid": "other"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "unknown_kid"
+      }
+    },
+    {
+      "name": "session: unknown credential kind",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "kind": "platform"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "wrong_kind"
+      }
+    },
+    {
+      "name": "session: auth_time after iat",
+      "policy": "open-documents",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "auth_time": 1793299990,
+          "iat": 1793299940
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-documents",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "session: 24 h window, ceremony 23 h ago",
+      "policy": "open-operator",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "auth_time": 1793217200,
+          "iat": 1793299940
+        }
+      },
+      "expect": {
+        "allowed": true,
+        "level": "session"
+      }
+    },
+    {
+      "name": "session: 24 h window, ceremony 25 h ago",
+      "policy": "open-operator",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "auth_time": 1793210000,
+          "iat": 1793299940
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "open-operator",
+          "level": "session",
+          "kind": "any"
+        },
+        "reason": "too_old"
+      }
+    },
+    {
+      "name": "recent: ceremony 300 s ago",
+      "policy": "export-data",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "auth_time": 1793299700,
+          "iat": 1793299700
+        }
+      },
+      "expect": {
+        "allowed": true,
+        "level": "recent"
+      }
+    },
+    {
+      "name": "recent: ceremony 301 s ago",
+      "policy": "export-data",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "auth_time": 1793299699,
+          "iat": 1793299699
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "export-data",
+          "level": "recent",
+          "kind": "any"
+        },
+        "reason": "too_old"
+      }
+    },
+    {
+      "name": "administrator policy, not an administrator",
+      "policy": "open-admin",
+      "identity": {
+        "x-sovereign-user-id": "1002",
+        "x-sovereign-login": "kid@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "sub": "1002",
+          "epoch": 1
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 403,
+        "body": {
+          "error": "not_authorized",
+          "policy": "open-admin"
+        },
+        "reason": "not_administrator"
+      }
+    },
+    {
+      "name": "administrator policy, administrator with a cookie",
+      "policy": "open-admin",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "GET",
+        "url": "/documents",
+        "body": ""
+      },
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {},
+      "expect": {
+        "allowed": true,
+        "level": "session"
+      }
+    },
+    {
+      "name": "every-time: no token yet",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "no_token"
+      }
+    },
+    {
+      "name": "every-time: valid token, redeemed",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 1,
+      "action": {},
+      "expect": {
+        "allowed": true,
+        "level": "every-time"
+      }
+    },
+    {
+      "name": "every-time: replayed",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "replayed",
+      "redeem_calls": 1,
+      "action": {},
+      "expect": {
+        "allowed": false,
+        "status": 403,
+        "body": {
+          "error": "step_up_refused",
+          "policy": "privileged-plan",
+          "reason": "replayed"
+        },
+        "reason": "redemption_replayed"
+      }
+    },
+    {
+      "name": "every-time: Home Base no longer authorizes the member",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "not_authorized",
+      "redeem_calls": 1,
+      "action": {},
+      "expect": {
+        "allowed": false,
+        "status": 403,
+        "body": {
+          "error": "step_up_refused",
+          "policy": "privileged-plan",
+          "reason": "not_authorized"
+        },
+        "reason": "redemption_not_authorized"
+      }
+    },
+    {
+      "name": "every-time: Home Base does not answer",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "unavailable",
+      "redeem_calls": 1,
+      "action": {},
+      "expect": {
+        "allowed": false,
+        "status": 403,
+        "body": {
+          "error": "step_up_refused",
+          "policy": "privileged-plan",
+          "reason": "unavailable"
+        },
+        "reason": "redemption_unavailable"
+      }
+    },
+    {
+      "name": "every-time: token for another body",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "dig": "r49pCkrjTNxEoAhsU5tRSS6QlHy0CKuoBL3xyqPx144"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_digest"
+      }
+    },
+    {
+      "name": "every-time: target changed since the token",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "tgt": "backup 2026-10-27T02:00Z"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_target"
+      }
+    },
+    {
+      "name": "every-time: token for another app",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "app": "helm"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_app"
+      }
+    },
+    {
+      "name": "every-time: token for another action",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "act": "grant-administrator"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_action"
+      }
+    },
+    {
+      "name": "every-time: synced passkey where hardware is required",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "kind": "synced"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_kind"
+      }
+    },
+    {
+      "name": "every-time: lives longer than 60 s",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "iat": 1793299995,
+          "exp": 1793300056
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "every-time: no jti",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "remove": [
+          "jti"
+        ]
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "every-time: expired",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "iat": 1793299939,
+          "exp": 1793299999
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "every-time: an assurance cookie is not an action token",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "typ": "assurance"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_type"
+      }
+    },
+    {
+      "name": "every-time: stale member epoch",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "epoch": 3
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "stale_epoch"
+      }
+    },
+    {
+      "name": "every-time: another hostname",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "action": {
+        "set": {
+          "aud": "smith-homebase.example-tailnet.ts.net"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "wrong_audience"
+      }
+    },
+    {
+      "name": "every-time: a valid cookie does not count",
+      "policy": "privileged-plan",
+      "identity": {
+        "x-sovereign-user-id": "1001",
+        "x-sovereign-login": "parent@example.com"
+      },
+      "request": {
+        "method": "POST",
+        "url": "/api/plans?dry=0",
+        "body": "{\"plan\":\"restore\"}"
+      },
+      "target": "backup 2026-10-28T02:00Z",
+      "redeem": "redeemed",
+      "redeem_calls": 0,
+      "cookie": "__Host-sv_assurance=<token>",
+      "claims": {
+        "set": {
+          "kind": "hardware"
+        }
+      },
+      "expect": {
+        "allowed": false,
+        "status": 401,
+        "body": {
+          "error": "step_up_required",
+          "policy": "privileged-plan",
+          "level": "every-time",
+          "kind": "hardware",
+          "target": "backup 2026-10-28T02:00Z",
+          "digest": "AX1oQ5-1QFVcnQqOqqd4w2G3Y_2f59sFpxUAKIMNC1o"
+        },
+        "reason": "no_token"
+      }
+    }
+  ]
+}

@@ -67,6 +67,29 @@ The reader trusts the snapshot only while the file and its directory belong to t
 
 `readOwnedFile(file, { uid })` applies the same ownership rules to any small file, for configuration a trusted user writes (Home Base reads root's with `uid: 0`).
 
+## Assurance
+
+For actions that need more than a member: a passkey session, a recent ceremony, or a fresh hardware-key tap bound to this exact request (contract, sections 6 to 9). The app names the action by its key in the policy matrix (`src/policy.json`); the level, credential kind and window come from there.
+
+```js
+const { createAssurance, assuranceExpress, sendAssuranceRefusal } = require('sovereign-auth');
+
+const assurance = createAssurance({
+  appId: 'family-pulse',
+  hostname: 'smith-pulse.example-tailnet.ts.net',  // cookies and tokens must name it exactly
+  identity,                                         // createIdentity in tailnet mode
+});
+
+// Express: a passkey ceremony in the last five minutes before an export.
+app.post('/api/export', assuranceExpress(assurance, 'export-data'), handler);
+
+// Node's http
+const decision = await assurance.check('open-documents', { method: req.method, url: req.url, headers: req.headers });
+if (!decision.allowed) return sendAssuranceRefusal(res, decision);  // 401 step_up_required, or 403
+```
+
+Every-time actions (Home Base's privileged plans) also pass the `target` the request will act on, and the raw body, which the action token's digest covers; the token is then redeemed with Home Base over `/run/sovereign-identity/<app>.sock` before the handler runs. The library verifies tokens; Home Base issues them (SID-005).
+
 ## Tests and conformance vectors
 
 ```bash
