@@ -1,0 +1,972 @@
+{
+  "contract": 1,
+  "description": "Request guard conformance (wire contract, section 4). For each group, build the guard from its options, then check each request: method plus headers with lower-case names. A refused request must give the expected reason; reasons are checked in the order isolation, Origin, fetch site, content type.",
+  "groups": [
+    {
+      "name": "strict hostname (Home Base admin)",
+      "guard": {
+        "origin": "https://homebase.example-tailnet.ts.net",
+        "isolate": true
+      },
+      "cases": [
+        {
+          "name": "same-origin fetch from its own page",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "top-level navigation from a sibling hostname's link",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "typed address or bookmark",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "none",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "top-level navigation from another site",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "cross-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin iframe (framing is nginx's frame-ancestors, not this guard)",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "iframe"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "sibling fetch",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling no-cors fetch",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling image",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "image"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling script",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "script"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling stylesheet",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "style"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling iframe",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "iframe"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "framed by another site",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "cross-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "iframe"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling preflight",
+          "request": {
+            "method": "OPTIONS",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net",
+              "access-control-request-method": "POST"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling HEAD navigation is not a GET",
+          "request": {
+            "method": "HEAD",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "navigation mode without a document destination",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "document destination without navigation mode",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "document"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling top-level form post (urlencoded)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/x-www-form-urlencoded"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "sibling top-level form post (text/plain)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "text/plain"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "cross-site top-level form post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "cross-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://evil.example",
+              "content-type": "text/plain"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "missing fetch metadata (old browser, script, curl)",
+          "request": {
+            "method": "GET",
+            "headers": {}
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_missing"
+          }
+        },
+        {
+          "name": "missing fetch metadata on a mutation",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_missing"
+          }
+        },
+        {
+          "name": "malformed fetch site: wrong case",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "Same-Origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_malformed"
+          }
+        },
+        {
+          "name": "malformed fetch site: two values",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-origin, cross-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_malformed"
+          }
+        },
+        {
+          "name": "malformed fetch site: empty",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_malformed"
+          }
+        },
+        {
+          "name": "malformed fetch site: unknown token",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-host",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_metadata_malformed"
+          }
+        },
+        {
+          "name": "same-origin JSON post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON post with a charset",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json; charset=utf-8"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON post, media type in capitals",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "Application/JSON"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON put",
+          "request": {
+            "method": "PUT",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON patch",
+          "request": {
+            "method": "PATCH",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON delete",
+          "request": {
+            "method": "DELETE",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin post without an Origin",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_missing"
+          }
+        },
+        {
+          "name": "same-origin post with an empty Origin",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_missing"
+          }
+        },
+        {
+          "name": "same-origin post with Origin null",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "null",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "same-origin post with a sibling Origin",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "Origin with a trailing slash is not exact",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net/",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "Origin with another port",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net:8443",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "Origin over http",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "http://homebase.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "Origin in other case is not exact",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://HOMEBASE.EXAMPLE-TAILNET.TS.NET",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "same-origin form post (text/plain)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "text/plain"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        },
+        {
+          "name": "same-origin post with no content type",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        },
+        {
+          "name": "same-origin multipart post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "multipart/form-data; boundary=x"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        },
+        {
+          "name": "json lookalike media type",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "application/json-patch+json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        }
+      ]
+    },
+    {
+      "name": "low-friction shared hostname",
+      "guard": {
+        "origin": "https://home.example-tailnet.ts.net",
+        "isolate": false
+      },
+      "cases": [
+        {
+          "name": "sibling fetch (no isolation on the shared hostname)",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "sibling image",
+          "request": {
+            "method": "GET",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "no-cors",
+              "sec-fetch-dest": "image"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "missing fetch metadata on a read",
+          "request": {
+            "method": "GET",
+            "headers": {}
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "same-origin JSON post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "JSON post without fetch metadata but with the exact Origin",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "sibling JSON post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://pulse.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "sibling form post (text/plain)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "content-type": "text/plain"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "cross-site form post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "cross-site",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://evil.example",
+              "content-type": "application/x-www-form-urlencoded"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        },
+        {
+          "name": "exact Origin but the browser says same-site",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_site"
+          }
+        },
+        {
+          "name": "exact Origin but the browser says none",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "none",
+              "sec-fetch-mode": "navigate",
+              "sec-fetch-dest": "document",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "fetch_site"
+          }
+        },
+        {
+          "name": "exact Origin, no fetch metadata, text/plain (old browser form)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "text/plain"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        },
+        {
+          "name": "no Origin, no fetch metadata (curl)",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_missing"
+          }
+        },
+        {
+          "name": "sibling preflight",
+          "request": {
+            "method": "OPTIONS",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://homebase.example-tailnet.ts.net",
+              "access-control-request-method": "POST"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "origin_mismatch"
+          }
+        }
+      ]
+    },
+    {
+      "name": "strict app hostname that accepts uploads",
+      "guard": {
+        "origin": "https://pulse.example-tailnet.ts.net",
+        "isolate": true,
+        "contentTypes": [
+          "application/json",
+          "multipart/form-data"
+        ]
+      },
+      "cases": [
+        {
+          "name": "same-origin multipart post where uploads are allowed",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://pulse.example-tailnet.ts.net",
+              "content-type": "multipart/form-data; boundary=x"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "JSON is still accepted alongside",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://pulse.example-tailnet.ts.net",
+              "content-type": "application/json"
+            }
+          },
+          "expect": {
+            "allowed": true
+          }
+        },
+        {
+          "name": "sibling multipart post",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-site",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://home.example-tailnet.ts.net",
+              "content-type": "multipart/form-data; boundary=x"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "not_same_origin"
+          }
+        },
+        {
+          "name": "urlencoded is still refused",
+          "request": {
+            "method": "POST",
+            "headers": {
+              "sec-fetch-site": "same-origin",
+              "sec-fetch-mode": "cors",
+              "sec-fetch-dest": "empty",
+              "origin": "https://pulse.example-tailnet.ts.net",
+              "content-type": "application/x-www-form-urlencoded"
+            }
+          },
+          "expect": {
+            "allowed": false,
+            "reason": "content_type"
+          }
+        }
+      ]
+    }
+  ]
+}
