@@ -139,6 +139,17 @@
       }
     },
     {
+      "name": "correlation cookie with the prefix in upper case, which Safari lets a sibling plant",
+      "headers_set": {
+        "cookie": "__HOST-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "no_cookie"
+      }
+    },
+    {
       "name": "two correlation cookies",
       "headers_set": {
         "cookie": "__Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc; __Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc"
