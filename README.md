@@ -42,6 +42,8 @@ http.createServer((req, res) => {
 
 `mode` is `enforce` (answer 403 and stop), `report` (log what enforce would refuse, then go on) or `off`. The core, `guard.check({ method, headers })`, returns `{ allowed: true }` or `{ allowed: false, status: 403, reason, message }` for any other framework.
 
+With isolation on, the adapters also add `Vary: Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest` to every response, so the browser never hands a cached response to a request the guard would refuse. An app that sets `Vary` itself appends to it; an adapter for another framework must add it too (contract, section 4.1).
+
 ## Tests and conformance vectors
 
 ```bash

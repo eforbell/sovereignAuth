@@ -22,6 +22,24 @@ function describeRefusal(decision, req, mode) {
   return `[sovereign-auth] ${verb} ${req.method} ${path}: ${decision.reason} (origin ${origin}, sec-fetch-site ${site})`;
 }
 
+// What an isolating guard lets through depends on the fetch metadata, so every response it passes on has to say
+// so. Without Vary a browser can serve a response cached for the app's own page to a sibling hostname's
+// <script> or fetch without asking the app (Fetch Metadata, section 4, "Vary"). Values already set are kept;
+// an app that sets Vary later must append to it, not replace it.
+const FETCH_METADATA_VARY = ['Sec-Fetch-Site', 'Sec-Fetch-Mode', 'Sec-Fetch-Dest'];
+
+function varyOnFetchMetadata(res) {
+  const current = res.getHeader('vary');
+  const values = String(Array.isArray(current) ? current.join(',') : current ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (values.includes('*')) return;
+  const present = new Set(values.map((value) => value.toLowerCase()));
+  for (const name of FETCH_METADATA_VARY) if (!present.has(name.toLowerCase())) values.push(name);
+  res.setHeader('Vary', values.join(', '));
+}
+
 function refusalBody(decision) {
   return { error: 'request_refused', reason: decision.reason, message: decision.message };
 }
@@ -36,8 +54,10 @@ function sendRefusal(res, decision) {
   res.end(body);
 }
 
-function decide(guard, req, { mode, log }) {
+function decide(guard, req, res, { mode, log }) {
   if (mode === 'off') return null;
+  // Report mode too: a cached response would hide from the log a request that enforce would refuse.
+  if (guard.isolate) varyOnFetchMetadata(res);
   const decision = guard.check({ method: req.method, headers: req.headers });
   if (decision.allowed) return null;
   log(describeRefusal(decision, req, mode));
@@ -49,7 +69,7 @@ function decide(guard, req, { mode, log }) {
 function guardHttp(guard, { mode = 'enforce', log = console.warn } = {}) {
   requireMode(mode);
   return function guardRequest(req, res) {
-    const refusal = decide(guard, req, { mode, log });
+    const refusal = decide(guard, req, res, { mode, log });
     if (!refusal) return true;
     sendRefusal(res, refusal);
     return false;
@@ -60,7 +80,7 @@ function guardHttp(guard, { mode = 'enforce', log = console.warn } = {}) {
 function guardExpress(guard, { mode = 'enforce', log = console.warn } = {}) {
   requireMode(mode);
   return function sovereignRequestGuard(req, res, next) {
-    const refusal = decide(guard, req, { mode, log });
+    const refusal = decide(guard, req, res, { mode, log });
     if (!refusal) return next();
     sendRefusal(res, refusal);
   };
