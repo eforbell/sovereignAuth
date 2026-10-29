@@ -14,7 +14,7 @@ Apps take it as a git dependency pinned to a commit, so hosts need no GitHub cre
 }
 ```
 
-Plain CommonJS for Node 22 and later, with no build step, no install scripts and no dependencies of its own.
+Plain CommonJS for Node 22 and later, with no build step and no install scripts. Its one dependency, `@simplewebauthn/server`, is pinned to an exact version and has no install scripts either.
 
 ## Request guards
 
@@ -121,6 +121,29 @@ app.post('/oauth/complete', async (req, res) => {                 // behind the 
   res.json({ linked: true });
 });
 ```
+
+## Passkeys
+
+Ceremonies for Home Base's passkey service (contract, section 11). Storage is the caller's: you pass the member's stored credentials in, and store what comes back. Every challenge is bound to the hostname, member, purpose, audience and action, and gets one attempt.
+
+```js
+const { createWebAuthn } = require('sovereign-auth');
+
+const webauthn = createWebAuthn({ rpID: 'example-tailnet.ts.net' });   // pinned Yubico roots by default
+const request = { hostname: 'smith-admin.example-tailnet.ts.net', member, purpose: 'enroll' };
+
+const options = await webauthn.registrationOptions({ ...request, attestation: 'direct', excludeCredentials: stored });
+// ...navigator.credentials.create({ publicKey: options }) in the browser...
+const result = await webauthn.verifyRegistration({ ...request, response });
+if (result.ok) save(result.credential);   // { id, publicKey, counter, transports, aaguid, kind, root, deviceType, backedUp }
+
+const stepUp = { ...request, purpose: 'step-up', audience: 'family-pulse', action: { act: 'export-data' } };
+const challenge = await webauthn.authenticationOptions({ ...stepUp, credentials: stored, kind: 'hardware' });
+const check = await webauthn.verifyAuthentication({ ...stepUp, credentials: stored, response });
+if (check.ok) update(check.credentialId, { counter: check.counter, backedUp: check.backedUp });
+```
+
+`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
 ## Tests and conformance vectors
 

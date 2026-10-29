@@ -23,5 +23,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eforbell/sovereignAuth.git"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "13.3.3"
+  },
+  "devDependencies": {
+    "@peculiar/x509": "1.14.3"
   }
 }

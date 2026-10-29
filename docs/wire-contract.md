@@ -12,6 +12,7 @@ Decisions referred to as D1–D23 are in Home Base's Feature-10 PRD (`planning/f
 | 5. Directory snapshot | **Implemented** (`createSnapshotReader`, `writeSnapshot`), vectors in `vectors/snapshot.json`; Home Base publishes a preview behind a setting in SID-003 and the real directory from SID-004 |
 | 6–9. Tokens, assurance cookie, step-up, action tokens | **Verified** by the app (`verifyToken`, `createAssurance`, `createRedeemer`), policy matrix in `src/policy.json`, vectors in `vectors/assurance.json`; issued and redeemed by Home Base from SID-005 |
 | 10. OAuth callbacks | **Implemented** (`createOAuthFlow`), vectors in `vectors/oauth.json` |
+| 11. Passkey ceremonies and credential kinds | **Implemented** (`createWebAuthn`), pinned roots in `src/attestation-roots.json`; run by Home Base's passkey service from SID-005 |
 
 Everything marked "contract only" may still change before its implementation lands; the version number changes once a host runs it.
 
@@ -301,6 +302,30 @@ The state store is the app's: anything with `put(record)` and a `take(state)` th
 
 An app that can't follow this stays in local mode.
 
-## 11. Conformance vectors
+## 11. Passkey ceremonies and credential kinds (D15, D17)
+
+Home Base's passkey service runs the ceremonies (SID-005); apps only read the `kind` they produce, from the assurance cookie. The rules:
+
+- **RP ID** is the tailnet domain, for every hostname in it. The origin is `https://<the hostname the ceremony runs on>`, exactly.
+- **User verification** is required. **No PRF**, or any other extension that derives something: a ceremony proves presence and nothing more.
+- **Challenges** last 5 minutes and are stored with the hostname that issued them, the member, the purpose (`enroll`, `step-up`, …), the audience (a hostname or an app ID), the action context and, for a step-up, the kind it needs. Finishing takes the record first, so a challenge gets one attempt, then refuses unless every one of those matches the finishing request and the ceremony type (registration or authentication) is the one it was issued for.
+- **clientData** must have `crossOrigin` absent or `false` and no `topOrigin`: a ceremony in a frame is never accepted.
+- **A step-up** names the member's own credentials; a credential not among them, or a user handle that isn't the member's stable user ID, is refused.
+
+**Kinds** come from what the authenticator proves. What the member asked for when enrolling plays no part:
+
+| Kind | When |
+| --- | --- |
+| `synced` | The flags say backup-eligible or backed up: the key can leave the device |
+| `device-bound` | Single-device, with no attestation that verified |
+| `hardware` | Single-device, and a `packed` attestation whose chain verifies to a pinned root |
+
+Attestation is `none` except when enrolling a hardware key, which asks for `direct`. Only the `none` and `packed` formats are accepted. A `packed` statement with a certificate chain must reach a pinned root, or the registration is refused rather than downgraded. The chain is checked before anything else looks at the certificates. Every certificate must be within its validity period. The leaf must not be a CA, and every certificate after it must be one, each signed by the next. The last must be a pinned root, or be signed by one. There are at most four certificates, and a self-signed certificate the client sends never ends the chain. The credential records the root it verified against.
+
+A stored credential's kind never rises. It falls to `synced` if the flags ever say so, and `hardware` falls to `device-bound` when its root is no longer pinned, so a sovereignAuth release that removes a root demotes every credential that relied on it. With no roots loaded, nothing is hardware.
+
+Refusal reasons: `malformed`, `unknown_challenge`, `expired`, `wrong_ceremony`, `wrong_hostname`, `wrong_member`, `wrong_purpose`, `wrong_audience`, `wrong_action`, `cross_origin`, `unsupported_attestation`, `untrusted_attestation`, `unknown_credential`, `wrong_kind`, `not_verified`.
+
+## 12. Conformance vectors
 
 `vectors/*.json` are language-neutral. Each file describes how to build the thing under test and lists cases with their expected outcome. A port must pass every file unchanged; a new case is added here first, then to every implementation.
