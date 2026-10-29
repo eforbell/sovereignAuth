@@ -4,12 +4,14 @@ const { DEFAULT_SNAPSHOT_PATH, SnapshotError, createSnapshotReader, parseSnapsho
 const { authMode, createIdentity, requireSocketListen, resolveMember } = require('./identity');
 const { ACTION_HEADER, COOKIE_NAME, POLICY, assuranceCookie, assuranceExpress, createAssurance, policyFor, requestDigest, sendAssuranceRefusal } = require('./assurance');
 const { createRedeemer, redemptionSocket } = require('./redeem');
+const { OAUTH_COOKIE_NAME, createMemoryStateStore, createOAuthFlow, pkceChallenge } = require('./oauth');
 const { signToken, verifyToken } = require('./tokens');
 
 module.exports = {
   ACTION_HEADER,
   COOKIE_NAME,
   DEFAULT_SNAPSHOT_PATH,
+  OAUTH_COOKIE_NAME,
   POLICY,
   SnapshotError,
   assuranceCookie,
@@ -17,6 +19,8 @@ module.exports = {
   authMode,
   createAssurance,
   createIdentity,
+  createMemoryStateStore,
+  createOAuthFlow,
   createRedeemer,
   createRequestGuard,
   createSnapshotReader,
@@ -24,6 +28,7 @@ module.exports = {
   guardHttp,
   normalizeOrigin,
   parseSnapshot,
+  pkceChallenge,
   policyFor,
   readOwnedFile,
   redemptionSocket,

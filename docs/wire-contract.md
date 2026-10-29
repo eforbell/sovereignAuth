@@ -11,7 +11,7 @@ Decisions referred to as D1–D23 are in Home Base's Feature-10 PRD (`planning/f
 | 4. Request guards | **Implemented** (`createRequestGuard`, `guardHttp`, `guardExpress`), vectors in `vectors/request-guards.json` |
 | 5. Directory snapshot | **Implemented** (`createSnapshotReader`, `writeSnapshot`), vectors in `vectors/snapshot.json`; Home Base publishes a preview behind a setting in SID-003 and the real directory from SID-004 |
 | 6–9. Tokens, assurance cookie, step-up, action tokens | **Verified** by the app (`verifyToken`, `createAssurance`, `createRedeemer`), policy matrix in `src/policy.json`, vectors in `vectors/assurance.json`; issued and redeemed by Home Base from SID-005 |
-| 10. OAuth callbacks | Contract only; helper in SID-003 |
+| 10. OAuth callbacks | **Implemented** (`createOAuthFlow`), vectors in `vectors/oauth.json` |
 
 Everything marked "contract only" may still change before its implementation lands; the version number changes once a host runs it.
 
@@ -286,8 +286,16 @@ Cache-Control: no-store
 The only route allowed to act on URL parameters, and only through this sequence:
 
 1. **Start**: the member asks the app, with a mutation-guarded `POST`, to link an account. The app stores a state record `{state, user_id, hostname, correlation, PKCE verifier, created}`. `state` and `correlation` are each 32 random bytes in base64url. The app sets `__Host-sv_oauth=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=600`, then sends the browser to the provider with `state` and a PKCE challenge wherever the provider supports it.
-2. **Landing**: the provider redirects to the app's callback route. That `GET` needs no cookie and changes nothing. It renders a page that reads `code` and `state`, removes them from the address bar, and sends them once.
-3. **Completion**: a same-origin JSON `POST` of `{code, state}` to the app's completion route, which passes the mutation guard. The `SameSite=Strict` cookie was withheld on the provider's cross-site redirect, but is sent on this same-origin request. The route refuses unless the state record exists and is unused, is at most 10 minutes old, and matches the current member, this hostname and the cookie. It marks the record used before exchanging the code, then clears the cookie.
+2. **Landing**: the provider redirects to the app's callback route. That `GET` needs no cookie and changes nothing, and answers with `Cache-Control: no-store` and `Referrer-Policy: same-origin`. It renders a page that reads `code` and `state`, removes them from the address bar (`history.replaceState`), and sends them once. A reload finds nothing to send; an `error` parameter is shown, not sent.
+3. **Completion**: a same-origin JSON `POST` of `{code, state}` to the app's completion route, which passes the mutation guard. The `SameSite=Strict` cookie was withheld on the provider's cross-site redirect, but is sent on this same-origin request. The route takes the state record first, so it is used up whatever happens next, then refuses unless it existed, is at most 10 minutes old, and matches the current member, this hostname and the cookie, and unless `Referer` is exactly the landing page's URL (`https://<hostname><landing path>`, no query): that is how the route knows the landing page sent it, not another page of the app. Only then does the app exchange the code, with the record's PKCE verifier. Every answer clears the cookie.
+
+A refusal is `400` (a body that isn't `{code, state}` of the right shape) or `403`:
+
+```
+{"error": "oauth_refused", "reason": "malformed" | "unknown_state" | "expired" | "wrong_member" | "wrong_hostname" | "no_cookie" | "duplicate_cookie" | "wrong_correlation" | "not_from_landing"}
+```
+
+The state store is the app's: anything with `put(record)` and a `take(state)` that returns a record at most once. The library's default keeps records in memory.
 
 An app that can't follow this stays in local mode.
 

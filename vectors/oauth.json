@@ -1,0 +1,265 @@
+{
+  "contract": "docs/wire-contract.md, section 10",
+  "description": "OAuth completion (step 3). Each case loads \"record\" (the base record with \"record_set\" applied; null for none) into an empty store, then completes with the member \"member\", the request \"headers\" (the base headers with \"headers_set\" applied; a null value removes the header) and the JSON body \"body\" (default the base body), at \"now\" plus \"now_offset_ms\". \"expect\" is ok, or refused with the HTTP status and reason. Every completion clears the correlation cookie, and the record is gone afterwards whatever the outcome. \"pkce\" lists verifier/challenge pairs (S256); the first is RFC 7636 appendix B.",
+  "hostname": "smith-helm.example-tailnet.ts.net",
+  "landing_path": "/oauth/callback",
+  "now": 1793300000000,
+  "base": {
+    "record": {
+      "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "userId": "1001",
+      "hostname": "smith-helm.example-tailnet.ts.net",
+      "correlation": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "codeVerifier": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+      "created": 1793299940000,
+      "data": {
+        "provider": "schwab"
+      }
+    },
+    "member": "1001",
+    "headers": {
+      "cookie": "__Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc",
+      "referer": "https://smith-helm.example-tailnet.ts.net/oauth/callback"
+    },
+    "body": {
+      "code": "provider-code-123",
+      "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+    }
+  },
+  "pkce": [
+    {
+      "verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      "challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    }
+  ],
+  "cases": [
+    {
+      "name": "valid",
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "valid among other cookies",
+      "headers_set": {
+        "cookie": "theme=dark; __Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc; a=b"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "ten minutes old",
+      "record_set": {
+        "created": 1793299400000
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "older than ten minutes",
+      "record_set": {
+        "created": 1793299399999
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "created in the future",
+      "record_set": {
+        "created": 1793300001000
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "expired"
+      }
+    },
+    {
+      "name": "no such state, or already used",
+      "record": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "unknown_state"
+      }
+    },
+    {
+      "name": "another member",
+      "member": "1002",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "wrong_member"
+      }
+    },
+    {
+      "name": "no member",
+      "member": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "wrong_member"
+      }
+    },
+    {
+      "name": "started on another hostname",
+      "record_set": {
+        "hostname": "smith-pulse.example-tailnet.ts.net"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "wrong_hostname"
+      }
+    },
+    {
+      "name": "no correlation cookie",
+      "headers_set": {
+        "cookie": null
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "no_cookie"
+      }
+    },
+    {
+      "name": "correlation cookie without the prefix, as a sibling could plant it",
+      "headers_set": {
+        "cookie": "sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "no_cookie"
+      }
+    },
+    {
+      "name": "two correlation cookies",
+      "headers_set": {
+        "cookie": "__Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc; __Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "duplicate_cookie"
+      }
+    },
+    {
+      "name": "another flow's correlation cookie",
+      "headers_set": {
+        "cookie": "__Host-sv_oauth=ddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "wrong_correlation"
+      }
+    },
+    {
+      "name": "no Referer",
+      "headers_set": {
+        "referer": null
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "not_from_landing"
+      }
+    },
+    {
+      "name": "from another page of the app",
+      "headers_set": {
+        "referer": "https://smith-helm.example-tailnet.ts.net/settings"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "not_from_landing"
+      }
+    },
+    {
+      "name": "from the landing page with the code still in the address",
+      "headers_set": {
+        "referer": "https://smith-helm.example-tailnet.ts.net/oauth/callback?code=provider-code-123&state=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "not_from_landing"
+      }
+    },
+    {
+      "name": "from a sibling hostname's landing path",
+      "headers_set": {
+        "referer": "https://smith-home.example-tailnet.ts.net/oauth/callback"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "reason": "not_from_landing"
+      }
+    },
+    {
+      "name": "state of the wrong shape",
+      "body": {
+        "code": "provider-code-123",
+        "state": "short"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "no code",
+      "body": {
+        "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "code is not text",
+      "body": {
+        "code": 123,
+        "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "code longer than 4096 characters",
+      "body": {
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "state": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "reason": "malformed"
+      }
+    },
+    {
+      "name": "no body",
+      "body": null,
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "reason": "malformed"
+      }
+    }
+  ]
+}
