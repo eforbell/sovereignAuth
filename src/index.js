@@ -6,7 +6,7 @@ const { ACTION_HEADER, COOKIE_NAME, POLICY, assuranceCookie, assuranceExpress, c
 const { createRedeemer, redemptionSocket } = require('./redeem');
 const { OAUTH_COOKIE_NAME, createMemoryStateStore, createOAuthFlow, pkceChallenge } = require('./oauth');
 const { signToken, verifyToken } = require('./tokens');
-const { ATTESTATION_ROOTS, attestationRoot, createMemoryChallengeStore, createWebAuthn, credentialKind, loadRoots } = require('./webauthn');
+const { ATTESTATION_ROOTS, attestationRoot, createMemoryChallengeStore, createWebAuthn, credentialKind, loadRoots, mergeCredentialUpdate } = require('./webauthn');
 
 module.exports = {
   ACTION_HEADER,
@@ -33,6 +33,7 @@ module.exports = {
   guardExpress,
   guardHttp,
   loadRoots,
+  mergeCredentialUpdate,
   normalizeOrigin,
   parseSnapshot,
   pkceChallenge,

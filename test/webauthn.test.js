@@ -10,6 +10,7 @@ const {
   createWebAuthn,
   credentialKind,
   loadRoots,
+  mergeCredentialUpdate,
 } = require('..');
 const { createAuthenticator, createCertificate } = require('./support/authenticator');
 
@@ -318,7 +319,7 @@ test('a kind that fell stays down, through the update the caller stores', async 
   const backedUp = await stepUp(webauthn, key, [credential], { kind: 'hardware', authenticate: { flagOptions: { eligible: true, backed: true } } });
   assert.equal(backedUp.reason, 'insufficient_kind');
   assert.equal(backedUp.update.kind, 'synced');
-  credential = { ...credential, ...backedUp.update };
+  credential = mergeCredentialUpdate(credential, backedUp.update);
   // Then single-device again: still synced, so no hardware challenge can even be issued for it.
   await assert.rejects(webauthn.authenticationOptions({ ...STEP_UP, credentials: [credential], kind: 'hardware' }), /no hardware credential/);
   const later = await stepUp(webauthn, key, [credential]);
@@ -326,6 +327,26 @@ test('a kind that fell stays down, through the update the caller stores', async 
   // A caller that kept only the flags, not the kind, gets the same answer.
   const { kind, ...flagsOnly } = credential;
   assert.equal(webauthn.currentKind({ ...flagsOnly, kind: 'hardware' }), 'synced');
+});
+
+test('two finishes for one credential, stored in either order, leave it demoted', async () => {
+  const webauthn = pinnedTest();
+  const key = createAuthenticator();
+  const { credential } = await enroll(webauthn, key, { attestation: 'direct', register: { fmt: 'packed', attestation: chain(pki.leaf, pki.intermediate) } });
+  // Two hardware challenges, finished against the same stored record before either result is stored.
+  const first = await webauthn.authenticationOptions({ ...STEP_UP, credentials: [credential], kind: 'hardware' });
+  const second = await webauthn.authenticationOptions({ ...STEP_UP, credentials: [credential], kind: 'hardware' });
+  const finish = (options, authenticate) => webauthn.verifyAuthentication({ ...STEP_UP, kind: 'hardware', credentials: [credential], response: key.authenticate(options, { origin: ORIGIN, ...authenticate }) });
+  const a = await finish(first, { signCount: 1 });
+  const b = await finish(second, { signCount: 2, flagOptions: { eligible: true, backed: true } });
+  assert.deepEqual([a.ok, a.update.kind, b.reason, b.update.kind], [true, 'hardware', 'insufficient_kind', 'synced']);
+  for (const order of [[a, b], [b, a]]) {
+    const stored = order.reduce((record, result) => mergeCredentialUpdate(record, result.update), credential);
+    assert.deepEqual(stored, { ...credential, kind: 'synced', counter: 2, deviceType: 'multiDevice', backedUp: true });
+    await assert.rejects(webauthn.authenticationOptions({ ...STEP_UP, credentials: [stored], kind: 'hardware' }), /no hardware credential/);
+  }
+  assert.deepEqual(mergeCredentialUpdate({ id: 'x', kind: 'hardware', counter: 5, deviceType: 'singleDevice', backedUp: false }, { kind: 'platform', counter: 'nine' }),
+    { id: 'x', kind: 'synced', counter: 5, deviceType: 'multiDevice', backedUp: true }, 'anything unknown is the weakest');
 });
 
 test('a step-up challenge finishes only under the kind it was issued for', async () => {

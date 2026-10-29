@@ -33,7 +33,21 @@ const HOSTNAME = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const certDate = (text) => new Date(text.replace(/ +/g, ' '));
 const current = (cert, at) => certDate(cert.validFrom) <= at && at <= certDate(cert.validTo);
 const signedBy = (cert, issuer) => cert.checkIssued(issuer) && cert.verify(issuer.publicKey);
-const weaker = (a, b) => KINDS[Math.min(KINDS.indexOf(a), KINDS.indexOf(b))];
+const knownKind = (kind) => (KINDS.includes(kind) ? kind : 'synced');
+const weaker = (a, b) => KINDS[Math.min(KINDS.indexOf(knownKind(a)), KINDS.indexOf(knownKind(b)))];
+
+// Folds an assertion's update into the stored credential. The kind only falls, the counter only rises and
+// the flags only widen, so two finishes stored in either order end the same way. Run it on the record as
+// read in the transaction that writes it.
+function mergeCredentialUpdate(stored, update) {
+  return {
+    ...stored,
+    kind: weaker(stored.kind, update.kind),
+    counter: Math.max(Number(stored.counter) || 0, Number(update.counter) || 0),
+    deviceType: stored.deviceType === 'singleDevice' && update.deviceType === 'singleDevice' ? 'singleDevice' : 'multiDevice',
+    backedUp: stored.backedUp !== false || update.backedUp !== false,
+  };
+}
 
 // Roots as the attestation-roots.json format lists them; each PEM must match its recorded fingerprint.
 function loadRoots(list = PINNED.roots) {
@@ -218,7 +232,7 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
   // and no longer hardware once the root it verified against is gone. The stored flags count as well as new
   // ones, so a key that once said it was backed up stays synced.
   function currentKind(credential, flags = credential) {
-    const stored = KINDS.includes(credential?.kind) ? credential.kind : 'synced';
+    const stored = knownKind(credential?.kind);
     const root = stored === 'hardware' ? anchors.find((anchor) => anchor.fingerprint === credential.root) : null;
     return [credential || {}, flags || {}].reduce((kind, seen) => weaker(kind, credentialKind({ deviceType: seen.deviceType, backedUp: seen.backedUp, root })), stored);
   }
@@ -246,8 +260,8 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
 
   // kind is the policy's, as when the challenge was issued. Returns { ok, credentialId, kind, update }, or
   // { ok: false, reason }. A verified assertion always carries update ({ kind, counter, deviceType,
-  // backedUp }), even when refused for its kind: the caller merges it into the stored credential, so a
-  // counter only moves forward and a kind that fell stays down.
+  // backedUp }), even when refused for its kind: the caller stores mergeCredentialUpdate(stored, update), so
+  // a counter only moves forward and a kind that fell stays down, whichever finish is stored first.
   async function verifyAuthentication({ credentials = [], kind = 'any', ...request }) {
     const { record, refusal } = await claim('authentication', request, { kind: requiredKind(kind) });
     if (refusal) return refusal;
@@ -285,4 +299,4 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
   return { registrationOptions, verifyRegistration, authenticationOptions, verifyAuthentication, currentKind };
 }
 
-module.exports = { ATTESTATION_ROOTS: PINNED.roots, attestationRoot, createMemoryChallengeStore, createWebAuthn, credentialKind, loadRoots };
+module.exports = { ATTESTATION_ROOTS: PINNED.roots, attestationRoot, createMemoryChallengeStore, createWebAuthn, credentialKind, loadRoots, mergeCredentialUpdate };

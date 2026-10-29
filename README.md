@@ -127,7 +127,7 @@ app.post('/oauth/complete', async (req, res) => {                 // behind the 
 Ceremonies for Home Base's passkey service (contract, section 11). Storage is the caller's: you pass the member's stored credentials in, and store what comes back. Every challenge is bound to the hostname, member, purpose, audience and action, and gets one attempt.
 
 ```js
-const { createWebAuthn } = require('sovereign-auth');
+const { createWebAuthn, mergeCredentialUpdate } = require('sovereign-auth');
 
 const webauthn = createWebAuthn({ rpID: 'example-tailnet.ts.net' });   // pinned Yubico roots by default
 const request = { hostname: 'smith-admin.example-tailnet.ts.net', member, purpose: 'enroll' };
@@ -140,11 +140,13 @@ if (result.ok) save(result.credential);   // { id, publicKey, counter, transport
 const stepUp = { ...request, purpose: 'step-up', audience: 'family-pulse', action: { act: 'export-data' } };
 const challenge = await webauthn.authenticationOptions({ ...stepUp, credentials: stored, kind: 'hardware' });
 const check = await webauthn.verifyAuthentication({ ...stepUp, kind: 'hardware', credentials: stored, response });
-if (check.update) updateCredential(check.credentialId, check.update);   // { kind, counter, deviceType, backedUp }, even when refused
+if (check.update) {   // { kind, counter, deviceType, backedUp }, even when refused
+  transaction((tx) => tx.saveCredential(mergeCredentialUpdate(tx.readCredential(check.credentialId), check.update)));
+}
 if (check.ok) issueAssurance(member, check.kind);
 ```
 
-`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not: that is how a counter only moves forward and a kind that fell stays down. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
+`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate` on the record as read in the same transaction: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
 ## Tests and conformance vectors
 
