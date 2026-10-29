@@ -37,8 +37,9 @@ const knownKind = (kind) => (KINDS.includes(kind) ? kind : 'synced');
 const weaker = (a, b) => KINDS[Math.min(KINDS.indexOf(knownKind(a)), KINDS.indexOf(knownKind(b)))];
 
 // Folds an assertion's update into the stored credential. The kind only falls, the counter only rises and
-// the flags only widen, so two finishes stored in either order end the same way. Run it on the record as
-// read in the transaction that writes it.
+// the flags only widen, so two finishes stored in either order end the same way, provided each read, merge
+// and write runs alone for that credential: a read locked until the write (SQLite's BEGIN IMMEDIATE, or
+// SELECT ... FOR UPDATE), or a compare-and-swap that retries.
 function mergeCredentialUpdate(stored, update) {
   return {
     ...stored,

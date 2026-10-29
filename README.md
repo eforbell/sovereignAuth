@@ -141,12 +141,12 @@ const stepUp = { ...request, purpose: 'step-up', audience: 'family-pulse', actio
 const challenge = await webauthn.authenticationOptions({ ...stepUp, credentials: stored, kind: 'hardware' });
 const check = await webauthn.verifyAuthentication({ ...stepUp, kind: 'hardware', credentials: stored, response });
 if (check.update) {   // { kind, counter, deviceType, backedUp }, even when refused
-  transaction((tx) => tx.saveCredential(mergeCredentialUpdate(tx.readCredential(check.credentialId), check.update)));
+  lockedTransaction((tx) => tx.saveCredential(mergeCredentialUpdate(tx.readCredentialForUpdate(check.credentialId), check.update)));
 }
 if (check.ok) issueAssurance(member, check.kind);
 ```
 
-`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate` on the record as read in the same transaction: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
+`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate`: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. That holds only if each read, merge and write runs alone for that credential: lock the read until the write (SQLite's `BEGIN IMMEDIATE`, or `SELECT … FOR UPDATE`), or compare-and-swap and retry. A plain transaction at read-committed isolation is not enough. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
 ## Tests and conformance vectors
 
