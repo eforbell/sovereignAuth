@@ -103,6 +103,62 @@ test('guardHttp reports: the refusal is logged and the request goes on; off is s
   }
 });
 
+function get(base, headers, path = '/app.js') {
+  return new Promise((resolve, reject) => {
+    const req = http.request(`${base}${path}`, { headers }, (res) => {
+      res.resume();
+      res.on('end', () => resolve({ status: res.statusCode, vary: res.headers.vary ?? null }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const SAME_ORIGIN_SCRIPT = { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' };
+const SIBLING_SCRIPT = { ...SAME_ORIGIN_SCRIPT, 'sec-fetch-site': 'same-site' };
+const VARY = 'Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest';
+
+// A response cached for the app's own page must not be served to a sibling's <script> without asking the app.
+test('an isolating guard makes every response vary on fetch metadata, so the browser cache cannot skip it', async () => {
+  const serve = (guardRequest, appVary) => (req, res) => {
+    if (appVary) res.setHeader('Vary', appVary);
+    if (!guardRequest(req, res)) return;
+    res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=300' });
+    res.end('');
+  };
+  for (const mode of ['enforce', 'report']) {
+    const guardRequest = guardHttp(createRequestGuard({ origin: ORIGIN }), { mode, log: () => {} });
+    await withServer(serve(guardRequest), async (base) => {
+      assert.deepEqual(await get(base, SAME_ORIGIN_SCRIPT), { status: 200, vary: VARY }, mode);
+      assert.deepEqual(await get(base, SIBLING_SCRIPT), { status: mode === 'enforce' ? 403 : 200, vary: VARY }, mode);
+    });
+  }
+  const guardRequest = guardHttp(createRequestGuard({ origin: ORIGIN }), { log: () => {} });
+  await withServer(serve(guardRequest, 'Accept-Encoding, sec-fetch-site'), async (base) => {
+    assert.equal((await get(base, SAME_ORIGIN_SCRIPT)).vary, 'Accept-Encoding, sec-fetch-site, Sec-Fetch-Mode, Sec-Fetch-Dest', 'kept, and not repeated');
+  });
+  await withServer(serve(guardRequest, '*'), async (base) => {
+    assert.equal((await get(base, SAME_ORIGIN_SCRIPT)).vary, '*', 'already varies on everything');
+  });
+});
+
+test('no Vary is added when nothing depends on fetch metadata: guard off, or isolation off', async () => {
+  const cases = [
+    ['off', createRequestGuard({ origin: ORIGIN })],
+    ['enforce', createRequestGuard({ origin: ORIGIN, isolate: false })],
+  ];
+  for (const [mode, guard] of cases) {
+    const guardRequest = guardHttp(guard, { mode, log: () => {} });
+    await withServer((req, res) => {
+      if (!guardRequest(req, res)) return;
+      res.writeHead(200);
+      res.end();
+    }, async (base) => {
+      assert.deepEqual(await get(base, SIBLING_SCRIPT), { status: 200, vary: null }, `${mode}, isolate ${guard.isolate}`);
+    });
+  }
+});
+
 test('an unknown mode is a configuration error, not a quiet fallback', () => {
   const guard = createRequestGuard({ origin: ORIGIN });
   for (const mode of ['enforced', 'on', '', 'ENFORCE', null]) {
@@ -116,14 +172,22 @@ test('guardExpress calls next only for allowed requests, in every mode', () => {
   const run = (mode, headers) => {
     const sent = [];
     let nexts = 0;
-    const res = { writeHead: (status, h) => sent.push({ status, h }), end: (body) => sent.push({ body }) };
+    const headers_ = {};
+    const res = {
+      getHeader: (name) => headers_[name.toLowerCase()],
+      setHeader: (name, value) => { headers_[name.toLowerCase()] = value; },
+      writeHead: (status, h) => sent.push({ status, h }),
+      end: (body) => sent.push({ body }),
+    };
     guardExpress(guard, { mode, log: () => {} })({ method: 'POST', url: '/x', headers }, res, () => { nexts += 1; });
-    return { nexts, sent };
+    return { nexts, sent, vary: headers_.vary };
   };
-  assert.deepEqual(run('enforce', SAME_ORIGIN_JSON), { nexts: 1, sent: [] });
+  assert.deepEqual(run('enforce', SAME_ORIGIN_JSON), { nexts: 1, sent: [], vary: VARY });
   const refused = run('enforce', SIBLING_FORM);
   assert.equal(refused.nexts, 0);
+  assert.equal(refused.vary, VARY);
   assert.equal(refused.sent[0].status, 403);
   assert.equal(JSON.parse(refused.sent[1].body).reason, 'not_same_origin');
-  assert.deepEqual(run('report', SIBLING_FORM), { nexts: 1, sent: [] });
+  assert.deepEqual(run('report', SIBLING_FORM), { nexts: 1, sent: [], vary: VARY });
+  assert.deepEqual(run('off', SIBLING_FORM), { nexts: 1, sent: [], vary: undefined });
 });

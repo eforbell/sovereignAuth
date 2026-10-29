@@ -71,6 +71,8 @@ On by default for sensitive apps and Home Base admin; off for the shared low-fri
 
 Framing is also refused by nginx, which sends `Content-Security-Policy: frame-ancestors 'none'` on every response from a strict hostname.
 
+Every response from a strict hostname, allowed or refused, in `enforce` and in `report` mode, carries `Vary: Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest`, added to any `Vary` already set. Without it a browser can serve a response it cached for the app's own page to a sibling hostname's script, image or fetch, and the request never reaches the guard ([Fetch Metadata, "Vary"](https://www.w3.org/TR/fetch-metadata/#vary)). The adapters add it before the handler runs; an app that sets `Vary` itself appends to it and never replaces it, and a custom adapter must do the same.
+
 ### 4.2 Mutation guard (every hostname)
 
 Every method except `GET` and `HEAD`:
@@ -97,6 +99,7 @@ A sibling hostname's top-level navigation reaches the app with the member's iden
 HTTP/1.1 403 Forbidden
 Content-Type: application/json; charset=utf-8
 Cache-Control: no-store
+Vary: Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest    (strict hostnames)
 
 {"error": "request_refused", "reason": "<reason code>", "message": "<human-readable text>"}
 ```
@@ -213,6 +216,7 @@ When the level isn't met, the app answers before its handler runs:
 HTTP/1.1 401 Unauthorized
 Content-Type: application/json; charset=utf-8
 Cache-Control: no-store
+Vary: Sec-Fetch-Site, Sec-Fetch-Mode, Sec-Fetch-Dest    (strict hostnames)
 
 {"error": "step_up_required", "policy": "<policy key>", "level": "recent", "kind": "any"}
 ```
