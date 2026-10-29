@@ -1,6 +1,6 @@
 const { createRequestGuard, normalizeOrigin } = require('./guards');
 const { guardExpress, guardHttp, refusalBody } = require('./adapters');
-const { DEFAULT_SNAPSHOT_PATH, SnapshotError, createSnapshotReader, parseSnapshot, writeSnapshot } = require('./snapshot');
+const { DEFAULT_SNAPSHOT_PATH, SnapshotError, createSnapshotReader, parseSnapshot, readOwnedFile, writeSnapshot } = require('./snapshot');
 const { authMode, createIdentity, requireSocketListen, resolveMember } = require('./identity');
 
 module.exports = {
@@ -14,6 +14,7 @@ module.exports = {
   guardHttp,
   normalizeOrigin,
   parseSnapshot,
+  readOwnedFile,
   refusalBody,
   requireSocketListen,
   resolveMember,

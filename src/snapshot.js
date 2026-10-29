@@ -140,6 +140,16 @@ function readTrustedFile(file, { homeBaseUid }) {
   }
 }
 
+// The same trust for any small file: it and its directory owned by `uid`, every directory above them by
+// root, nothing writable by anyone else, no symlinks, one link. Home Base reads root-written configuration
+// this way (uid 0), so what it publishes is no more trusted than what it read. Throws SnapshotError.
+function readOwnedFile(file, { uid, trustedRoot = null } = {}) {
+  if (!Number.isSafeInteger(uid) || uid < 0) throw new Error('readOwnedFile needs the owner\'s uid');
+  const resolved = path.resolve(file);
+  checkDirectories(path.dirname(resolved), { homeBaseUid: uid, trustedRoot: trustedRoot && path.resolve(trustedRoot) });
+  return readTrustedFile(resolved, { homeBaseUid: uid });
+}
+
 // createSnapshotReader({ homeBaseUid, file, ... }).current() returns { ok: true, snapshot } or
 // { ok: false, reason, message }. It re-reads the file at most every recheckMs, checks the age of what it
 // holds on every call, and never accepts a generation lower than one it has seen.
@@ -233,5 +243,6 @@ module.exports = {
   SnapshotError,
   createSnapshotReader,
   parseSnapshot,
+  readOwnedFile,
   writeSnapshot,
 };

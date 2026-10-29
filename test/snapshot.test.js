@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createSnapshotReader, writeSnapshot } = require('..');
+const { SnapshotError, createSnapshotReader, readOwnedFile, writeSnapshot } = require('..');
 
 const vectors = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'vectors', 'snapshot.json'), 'utf8'));
 const UID = process.getuid();
@@ -85,6 +85,35 @@ test('the directory must be the Home Base user\'s, and everything above it root\
   // The snapshot's directory reached through a symlinked parent.
   fs.symlinkSync(dir, path.join(root, 'link'));
   assert.equal(createSnapshotReader({ homeBaseUid: UID, file: path.join(root, 'link', 'snapshot.json'), trustedRoot: root, now: () => T0 }).current().reason, 'untrusted');
+});
+
+// Home Base reads root-written configuration (uid 0) with the snapshot's own rules, so what it publishes is
+// never more trusted than what it read.
+test('readOwnedFile applies the same ownership rules to any file', (t) => {
+  const { root, dir } = tree(t);
+  const file = path.join(dir, 'members.json');
+  fs.writeFileSync(file, '{"members":[]}', { mode: 0o644 });
+  assert.equal(readOwnedFile(file, { uid: UID, trustedRoot: root }), '{"members":[]}');
+  const refused = (target, options = { uid: UID, trustedRoot: root }) => {
+    try {
+      readOwnedFile(target, options);
+    } catch (error) {
+      assert.ok(error instanceof SnapshotError, error.message);
+      return error.reason;
+    }
+    return 'read';
+  };
+  assert.equal(refused(file, { uid: UID + 1, trustedRoot: root }), 'untrusted', 'another owner');
+  fs.symlinkSync(file, path.join(dir, 'link.json'));
+  assert.equal(refused(path.join(dir, 'link.json')), 'untrusted', 'a symlink');
+  fs.chmodSync(file, 0o666);
+  assert.equal(refused(file), 'untrusted', 'writable by others');
+  fs.chmodSync(file, 0o644);
+  fs.chmodSync(dir, 0o777);
+  assert.equal(refused(file), 'untrusted', 'its directory writable by others');
+  fs.chmodSync(dir, 0o755);
+  assert.equal(refused(path.join(dir, 'absent.json')), 'missing');
+  assert.throws(() => readOwnedFile(file, { trustedRoot: root }), /owner's uid/);
 });
 
 test('freshness: refused after 120 s, refused from the future, and the age is checked on every call', (t) => {

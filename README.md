@@ -65,6 +65,8 @@ const { member, reason } = identity.identify(req.headers);
 
 The reader trusts the snapshot only while the file and its directory belong to the Home Base user and nothing on the path is a symlink or writable by anyone else; it refuses a snapshot older than 120 seconds or older than one it has already seen.
 
+`readOwnedFile(file, { uid })` applies the same ownership rules to any small file, for configuration a trusted user writes (Home Base reads root's with `uid: 0`).
+
 ## Tests and conformance vectors
 
 ```bash
