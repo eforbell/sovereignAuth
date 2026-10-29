@@ -6,10 +6,10 @@ Decisions referred to as D1–D23 are in Home Base's Feature-10 PRD (`planning/f
 
 | Section | Status |
 | --- | --- |
-| 2. App modes | Contract only; library in SID-003 |
-| 3. Identity headers | Sent by Home Base's ingress since SID-001; read by the library in SID-003 |
+| 2. App modes | **Implemented** (`authMode`, `createIdentity`) |
+| 3. Identity headers | Sent by Home Base's ingress since SID-001; **resolved** by `createIdentity` / `resolveMember`, vectors in `vectors/snapshot.json` |
 | 4. Request guards | **Implemented** (`createRequestGuard`, `guardHttp`, `guardExpress`), vectors in `vectors/request-guards.json` |
-| 5. Directory snapshot | Contract only; reader in SID-003, written by Home Base from SID-004 |
+| 5. Directory snapshot | **Implemented** (`createSnapshotReader`, `writeSnapshot`), vectors in `vectors/snapshot.json`; Home Base publishes a preview behind a setting in SID-003 and the real directory from SID-004 |
 | 6–9. Tokens, assurance cookie, step-up, action tokens | Contract only; verification in SID-003, issued by Home Base from SID-005 |
 | 10. OAuth callbacks | Contract only; helper in SID-003 |
 
@@ -147,6 +147,8 @@ The reader re-reads at most every 5 seconds. A refused snapshot is not cached as
   ]
 }
 ```
+
+The reader is configured with the Home Base user's uid (never 0); an app learns it from `SOVEREIGN_HOMEBASE_UID`, which Home Base renders into the app's environment when it enters tailnet mode.
 
 - `household`: the instance name, the same in every token.
 - `generation`: an integer that only grows, across Home Base restarts.
