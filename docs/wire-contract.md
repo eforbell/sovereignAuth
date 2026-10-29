@@ -10,7 +10,7 @@ Decisions referred to as D1–D23 are in Home Base's Feature-10 PRD (`planning/f
 | 3. Identity headers | Sent by Home Base's ingress since SID-001; **resolved** by `createIdentity` / `resolveMember`, vectors in `vectors/snapshot.json` |
 | 4. Request guards | **Implemented** (`createRequestGuard`, `guardHttp`, `guardExpress`), vectors in `vectors/request-guards.json` |
 | 5. Directory snapshot | **Implemented** (`createSnapshotReader`, `writeSnapshot`), vectors in `vectors/snapshot.json`; Home Base publishes a preview behind a setting in SID-003 and the real directory from SID-004 |
-| 6–9. Tokens, assurance cookie, step-up, action tokens | Contract only; verification in SID-003, issued by Home Base from SID-005 |
+| 6–9. Tokens, assurance cookie, step-up, action tokens | **Verified** by the app (`verifyToken`, `createAssurance`, `createRedeemer`), policy matrix in `src/policy.json`, vectors in `vectors/assurance.json`; issued and redeemed by Home Base from SID-005 |
 | 10. OAuth callbacks | Contract only; helper in SID-003 |
 
 Everything marked "contract only" may still change before its implementation lands; the version number changes once a host runs it.
@@ -167,8 +167,9 @@ v1.<payload>.<signature>
 
 - `<payload>` is the base64url (no padding) of a UTF-8 JSON object.
 - `<signature>` is the base64url (no padding) of an Ed25519 signature over the ASCII bytes of `v1.<payload>`.
+- Both parts must be the one canonical base64url spelling of their bytes: no padding, nothing outside the alphabet, no spare bits set. A token longer than 4096 characters is refused.
 - There is no algorithm field and nothing to negotiate: version 1 is Ed25519, and the verifying key is the snapshot key whose `kid` the payload names. An unknown `kid` fails.
-- Times are integer seconds since the Unix epoch. A token is refused once `exp` has passed, or when `iat` is more than 30 seconds in the future.
+- Times are integer seconds since the Unix epoch, and `kid`, `iat` and `exp` are required in every token. A token is refused from the second `exp` names onwards, or when `iat` is more than 30 seconds in the future.
 - Unknown payload fields are ignored; missing required ones fail.
 
 ## 7. Assurance cookie
@@ -199,18 +200,31 @@ Revoking a credential, disabling a member or changing their access bumps their e
 
 ## 8. Assurance policy and step-up
 
-The assurance policy matrix (D12) gives every protected action a level and a credential kind. Apps name an action by its policy key; the library looks up the rest, so no app decides its own level.
+The assurance policy matrix (D12) gives every protected action a level and a credential kind. Apps name an action by its policy key; the library looks up the rest, so no app decides its own level. The matrix is `src/policy.json`:
+
+| Policy key | Level | Kind | Administrator |
+| --- | --- | --- | --- |
+| `use-app` | `tailnet` | any | |
+| `open-documents` | `session`, 30 days | any | |
+| `open-operator` | `session`, 24 hours | any | |
+| `open-admin` | `session`, 8 hours | any | yes |
+| `link-account`, `export-data`, `change-role`, `manage-own-credential` | `recent` | any | |
+| `manage-admin-credential`, `grant-administrator`, `privileged-plan` | `every-time` | hardware | yes |
+
+"Administrator" is Home Base's own flag (D10), so only Home Base can use those keys; it tells the library who holds the flag.
 
 | Level | Satisfied by |
 | --- | --- |
 | `tailnet` | A member (section 3); no cookie |
-| `session` | A valid assurance cookie whose `auth_time` is within the app's window (30 days for finance and estate documents, 24 hours for trading and Bitcoin accounting, 8 hours for Home Base admin) |
+| `session` | A valid assurance cookie whose `auth_time` is within the policy's window |
 | `recent` | A valid assurance cookie whose `auth_time` is at most 5 minutes old |
 | `every-time` | A redeemed action token bound to this exact request (section 9) |
 
 Kind `any` accepts every credential kind; `hardware` accepts only `kind: "hardware"`.
 
-When the level isn't met, the app answers before its handler runs:
+A cookie's `auth_time` may not be later than its `iat`.
+
+When there is no member (section 3), the app answers `403 {"error": "not_a_member", "reason": "<why>"}`; when the policy needs an administrator and the member isn't one, `403 {"error": "not_authorized", "policy": "<policy key>"}`. When the member hasn't met the level, the app answers before its handler runs:
 
 ```
 HTTP/1.1 401 Unauthorized
@@ -246,7 +260,9 @@ After the ceremony, the helper retries the identical request with the token in `
 | `jti` | Single use (Home Base) |
 | `iat`, `exp` | `exp` at most 60 seconds after `iat` |
 
-The app checks all of that, then redeems the token before acting. It sends HTTP/1.1 over `/run/sovereign-identity/<app id>.sock` (owner the Home Base user, group the app's user, 0660), so the socket the request arrives on tells Home Base which app is asking:
+The app checks all of that, then redeems the token before acting. A token that fails any of these checks gets the same 401 again, with the target and digest as they stand now; the helper retries only once, so a second failure ends there.
+
+The digest covers the raw body bytes as received. An app that only has a parsed body must keep the raw bytes for every-time routes (in Express, `express.json({ verify })`); the library refuses to compute a digest from a parsed body, or with no body when the request has one. It sends HTTP/1.1 over `/run/sovereign-identity/<app id>.sock` (owner the Home Base user, group the app's user, 0660), so the socket the request arrives on tells Home Base which app is asking:
 
 ```
 POST /v1/redeem
@@ -255,7 +271,15 @@ Content-Type: application/json
 {"token": "<token>", "policy": "<policy key>", "target": "<target>", "digest": "<digest>"}
 ```
 
-Home Base checks that the token was issued for this app, consumes `jti` atomically, and rechecks the member's current authorization: active, has access to the app, epochs current, and administrator where the policy needs it. It answers `200 {"redeemed": true}`, or an error: `409 {"error": "replayed"}`, `403 {"error": "not_authorized"}`, `400 {"error": "invalid"}`. Anything else, including no answer within 3 seconds or a Home Base restart, counts as a refusal (fail closed).
+Home Base checks that the token was issued for this app, consumes `jti` atomically, and rechecks the member's current authorization: active, has access to the app, epochs current, and administrator where the policy needs it. It answers `200 {"redeemed": true}`, or an error: `409 {"error": "replayed"}`, `403 {"error": "not_authorized"}`, `400 {"error": "invalid"}`. Anything else, including no answer within 3 seconds or a Home Base restart, counts as a refusal (fail closed). After a refusal the app answers, without acting:
+
+```
+HTTP/1.1 403 Forbidden
+Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+
+{"error": "step_up_refused", "policy": "<policy key>", "reason": "replayed" | "not_authorized" | "invalid" | "unavailable"}
+```
 
 ## 10. OAuth and other external callbacks (D22)
 
