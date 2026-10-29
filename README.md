@@ -90,6 +90,38 @@ if (!decision.allowed) return sendAssuranceRefusal(res, decision);  // 401 step_
 
 Every-time actions (Home Base's privileged plans) also pass the `target` the request will act on, and the raw body, which the action token's digest covers; the token is then redeemed with Home Base over `/run/sovereign-identity/<app>.sock` before the handler runs. The library verifies tokens; Home Base issues them (SID-005).
 
+## Linking external accounts (OAuth)
+
+The one place an app acts on URL parameters, in three steps (contract, section 10): a guarded `POST` starts the flow, the provider's redirect lands on a page that changes nothing, and that page posts `code` and `state` back once.
+
+```js
+const { createOAuthFlow } = require('sovereign-auth');
+
+const oauth = createOAuthFlow({
+  hostname: 'smith-helm.example-tailnet.ts.net',
+  landingPath: '/oauth/callback',   // the redirect URI's path, as the browser sees it
+  completionPath: 'complete',       // relative to the landing page
+  donePath: '../settings',
+});
+
+app.post('/api/link', async (req, res) => {                       // behind the mutation guard
+  const { state, codeChallenge, setCookie } = await oauth.start(req.sovereignMember, { data: { provider: 'schwab' } });
+  res.setHeader('set-cookie', setCookie);
+  res.json({ url: providerAuthorizeUrl({ state, codeChallenge }) });
+});
+app.get('/oauth/callback', (req, res) => {
+  const page = oauth.landing();
+  res.status(page.status).set(page.headers).send(page.body);
+});
+app.post('/oauth/complete', async (req, res) => {                 // behind the mutation guard
+  const result = await oauth.complete({ member: req.sovereignMember, headers: req.headers, body: req.body });
+  res.setHeader('set-cookie', result.clearCookie);
+  if (!result.ok) return res.status(result.status).json(result.body);
+  await exchangeCode(result.code, result.codeVerifier);
+  res.json({ linked: true });
+});
+```
+
 ## Tests and conformance vectors
 
 ```bash
