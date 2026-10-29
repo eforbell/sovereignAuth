@@ -18,10 +18,16 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test \"test/*.test.js\""
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/eforbell/sovereignAuth.git"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "13.3.3"
+  },
+  "devDependencies": {
+    "@peculiar/x509": "1.14.3"
   }
 }

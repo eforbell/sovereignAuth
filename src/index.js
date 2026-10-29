@@ -6,9 +6,11 @@ const { ACTION_HEADER, COOKIE_NAME, POLICY, assuranceCookie, assuranceExpress, c
 const { createRedeemer, redemptionSocket } = require('./redeem');
 const { OAUTH_COOKIE_NAME, createMemoryStateStore, createOAuthFlow, pkceChallenge } = require('./oauth');
 const { signToken, verifyToken } = require('./tokens');
+const { ATTESTATION_ROOTS, attestationRoot, createMemoryChallengeStore, createWebAuthn, credentialKind, loadRoots, mergeCredentialUpdate } = require('./webauthn');
 
 module.exports = {
   ACTION_HEADER,
+  ATTESTATION_ROOTS,
   COOKIE_NAME,
   DEFAULT_SNAPSHOT_PATH,
   OAUTH_COOKIE_NAME,
@@ -16,16 +18,22 @@ module.exports = {
   SnapshotError,
   assuranceCookie,
   assuranceExpress,
+  attestationRoot,
   authMode,
   createAssurance,
   createIdentity,
+  createMemoryChallengeStore,
   createMemoryStateStore,
   createOAuthFlow,
   createRedeemer,
   createRequestGuard,
   createSnapshotReader,
+  createWebAuthn,
+  credentialKind,
   guardExpress,
   guardHttp,
+  loadRoots,
+  mergeCredentialUpdate,
   normalizeOrigin,
   parseSnapshot,
   pkceChallenge,
