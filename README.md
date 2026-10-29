@@ -139,11 +139,12 @@ if (result.ok) save(result.credential);   // { id, publicKey, counter, transport
 
 const stepUp = { ...request, purpose: 'step-up', audience: 'family-pulse', action: { act: 'export-data' } };
 const challenge = await webauthn.authenticationOptions({ ...stepUp, credentials: stored, kind: 'hardware' });
-const check = await webauthn.verifyAuthentication({ ...stepUp, credentials: stored, response });
-if (check.ok) update(check.credentialId, { counter: check.counter, backedUp: check.backedUp });
+const check = await webauthn.verifyAuthentication({ ...stepUp, kind: 'hardware', credentials: stored, response });
+if (check.update) updateCredential(check.credentialId, check.update);   // { kind, counter, deviceType, backedUp }, even when refused
+if (check.ok) issueAssurance(member, check.kind);
 ```
 
-`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
+`kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not: that is how a counter only moves forward and a kind that fell stays down. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
 ## Tests and conformance vectors
 

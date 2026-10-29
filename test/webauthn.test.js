@@ -46,7 +46,7 @@ async function enroll(webauthn, authenticator, { attestation = 'none', register 
 
 async function stepUp(webauthn, authenticator, credentials, { authenticate = {}, kind = 'any', request = STEP_UP, finish = request } = {}) {
   const options = await webauthn.authenticationOptions({ ...request, credentials, kind });
-  return webauthn.verifyAuthentication({ ...finish, credentials, response: authenticator.authenticate(options, { origin: ORIGIN, ...authenticate }) });
+  return webauthn.verifyAuthentication({ kind, ...finish, credentials, response: authenticator.authenticate(options, { origin: ORIGIN, ...authenticate }) });
 }
 
 test('the pinned roots are Yubico\'s, as published, and each matches its fingerprint', () => {
@@ -268,7 +268,7 @@ test('a step-up proves the member\'s own credential, and reports its kind now', 
   assert.equal(credential.kind, 'hardware');
 
   const ok = await stepUp(webauthn, key, [credential], { kind: 'hardware', authenticate: { userHandle: handle(PARENT) } });
-  assert.deepEqual(ok, { ok: true, purpose: 'step-up', audience: 'family-pulse', action: STEP_UP.action, credentialId: credential.id, kind: 'hardware', counter: 1, deviceType: 'singleDevice', backedUp: false });
+  assert.deepEqual(ok, { ok: true, purpose: 'step-up', audience: 'family-pulse', action: STEP_UP.action, credentialId: credential.id, kind: 'hardware', update: { kind: 'hardware', counter: 1, deviceType: 'singleDevice', backedUp: false } });
   assert.equal((await stepUp(webauthn, key, [{ ...credential, counter: 1 }])).ok, true, 'no user handle is fine');
 
   const other = createAuthenticator();
@@ -288,7 +288,8 @@ test('a step-up proves the member\'s own credential, and reports its kind now', 
   const before = pinnedTest({ store });
   const after = createWebAuthn({ rpID: RP_ID, roots: [], store });
   const started = await before.authenticationOptions({ ...STEP_UP, credentials: [credential], kind: 'hardware' });
-  assert.equal((await after.verifyAuthentication({ ...STEP_UP, credentials: [credential], response: key.authenticate(started, { origin: ORIGIN, signCount: 90 }) })).reason, 'wrong_kind');
+  const refused = await after.verifyAuthentication({ ...STEP_UP, kind: 'hardware', credentials: [credential], response: key.authenticate(started, { origin: ORIGIN, signCount: 90 }) });
+  assert.deepEqual(refused, { ok: false, reason: 'insufficient_kind', credentialId: credential.id, update: { kind: 'device-bound', counter: 90, deviceType: 'singleDevice', backedUp: false } });
   assert.equal(after.currentKind(credential), 'device-bound');
   const ordinary = await stepUp(after, key, [credential], { authenticate: { signCount: 91 } });
   assert.deepEqual([ordinary.ok, ordinary.kind], [true, 'device-bound']);
@@ -300,12 +301,42 @@ test('a stored kind never rises, and falls with the flags or the root', () => {
   assert.equal(webauthn.currentKind(hardware), 'hardware');
   assert.equal(webauthn.currentKind(hardware, { deviceType: 'singleDevice', backedUp: true }), 'synced');
   assert.equal(webauthn.currentKind(hardware, { deviceType: 'multiDevice', backedUp: false }), 'synced');
+  assert.equal(webauthn.currentKind({ ...hardware, backedUp: true }, { deviceType: 'singleDevice', backedUp: false }), 'synced', 'stored flags count too');
   assert.equal(webauthn.currentKind({ ...hardware, root: ATTESTATION_ROOTS[0].fingerprint }), 'device-bound');
   assert.equal(webauthn.currentKind({ ...hardware, root: null }), 'device-bound');
   assert.equal(webauthn.currentKind({ ...hardware, kind: 'device-bound' }), 'device-bound');
   assert.equal(webauthn.currentKind({ ...hardware, kind: 'synced' }), 'synced');
   assert.equal(webauthn.currentKind({ ...hardware, kind: 'platform' }), 'synced');
   assert.equal(webauthn.currentKind(null, hardware), 'synced');
+});
+
+test('a kind that fell stays down, through the update the caller stores', async () => {
+  const webauthn = pinnedTest();
+  const key = createAuthenticator();
+  let { credential } = await enroll(webauthn, key, { attestation: 'direct', register: { fmt: 'packed', attestation: chain(pki.leaf, pki.intermediate) } });
+  // The key says it is backed up once: the hardware step-up is refused, and the update says synced.
+  const backedUp = await stepUp(webauthn, key, [credential], { kind: 'hardware', authenticate: { flagOptions: { eligible: true, backed: true } } });
+  assert.equal(backedUp.reason, 'insufficient_kind');
+  assert.equal(backedUp.update.kind, 'synced');
+  credential = { ...credential, ...backedUp.update };
+  // Then single-device again: still synced, so no hardware challenge can even be issued for it.
+  await assert.rejects(webauthn.authenticationOptions({ ...STEP_UP, credentials: [credential], kind: 'hardware' }), /no hardware credential/);
+  const later = await stepUp(webauthn, key, [credential]);
+  assert.deepEqual([later.ok, later.kind, later.update.kind], [true, 'synced', 'synced']);
+  // A caller that kept only the flags, not the kind, gets the same answer.
+  const { kind, ...flagsOnly } = credential;
+  assert.equal(webauthn.currentKind({ ...flagsOnly, kind: 'hardware' }), 'synced');
+});
+
+test('a step-up challenge finishes only under the kind it was issued for', async () => {
+  const webauthn = pinnedTest();
+  const key = createAuthenticator();
+  const { credential: hardware } = await enroll(webauthn, key, { attestation: 'direct', register: { fmt: 'packed', attestation: chain(pki.leaf, pki.intermediate) } });
+  const plain = createAuthenticator();
+  const { credential: deviceBound } = await enroll(webauthn, plain);
+  assert.equal((await stepUp(webauthn, plain, [deviceBound], { kind: 'any', finish: { ...STEP_UP, kind: 'hardware' } })).reason, 'wrong_kind');
+  assert.equal((await stepUp(webauthn, key, [hardware], { kind: 'hardware', finish: { ...STEP_UP, kind: 'any' } })).reason, 'wrong_kind');
+  await assert.rejects(webauthn.verifyAuthentication({ ...STEP_UP, kind: 'synced', credentials: [hardware], response: {} }), /any or hardware/);
 });
 
 test('of many finishes racing with one challenge, exactly one succeeds', async () => {

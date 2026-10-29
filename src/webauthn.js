@@ -125,16 +125,16 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
 
   // Takes the record for this response's challenge and checks it against the request. The record is gone
   // whatever happens next, so a challenge gets one attempt.
-  async function claim(ceremony, request) {
+  async function claim(ceremony, request, bound = {}) {
     const refuse = (reason) => ({ refusal: { ok: false, reason } });
-    const expected = context(request);
+    const expected = { ...context(request), ...bound };
     const clientData = parseClientData(request.response?.response?.clientDataJSON);
     if (!clientData) return refuse('malformed');
     const record = await store.take(clientData.challenge);
     if (!record) return refuse('unknown_challenge');
     if (!(now() <= record.expires)) return refuse('expired');
     if (record.ceremony !== ceremony) return refuse('wrong_ceremony');
-    for (const field of ['hostname', 'userId', 'purpose', 'audience', 'action']) {
+    for (const field of ['hostname', 'userId', 'purpose', 'audience', 'action', ...Object.keys(bound)]) {
       if (record[field] !== expected[field]) return refuse(field === 'userId' ? 'wrong_member' : `wrong_${field}`);
     }
     // A ceremony in a frame, or run for another origin, is never ours (D17).
@@ -215,17 +215,23 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
   }
 
   // The kind a stored credential has now: never more than it registered as, synced once its flags say so,
-  // and no longer hardware once the root it verified against is gone.
+  // and no longer hardware once the root it verified against is gone. The stored flags count as well as new
+  // ones, so a key that once said it was backed up stays synced.
   function currentKind(credential, flags = credential) {
     const stored = KINDS.includes(credential?.kind) ? credential.kind : 'synced';
     const root = stored === 'hardware' ? anchors.find((anchor) => anchor.fingerprint === credential.root) : null;
-    return weaker(stored, credentialKind({ deviceType: flags.deviceType, backedUp: flags.backedUp, root }));
+    return [credential || {}, flags || {}].reduce((kind, seen) => weaker(kind, credentialKind({ deviceType: seen.deviceType, backedUp: seen.backedUp, root })), stored);
   }
+
+  const requiredKind = (kind) => {
+    if (kind !== 'any' && kind !== 'hardware') throw new Error('kind is any or hardware');
+    return kind;
+  };
 
   // credentials: the member's stored credentials. kind: 'hardware' when the policy needs it (D12).
   async function authenticationOptions({ credentials = [], kind = 'any', ...request }) {
     const record = context(request);
-    if (kind !== 'any' && kind !== 'hardware') throw new Error('kind is any or hardware');
+    requiredKind(kind);
     const usable = credentials.filter((credential) => kind === 'any' || currentKind(credential) === 'hardware');
     if (usable.length === 0) throw new Error(`the member has no ${kind === 'any' ? '' : 'hardware '}credential to use`);
     const options = await generateAuthenticationOptions({
@@ -238,10 +244,12 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
     return options;
   }
 
-  // Returns { ok, credentialId, kind, counter, deviceType, backedUp }; the caller stores the counter and
-  // flags. Or { ok: false, reason }.
-  async function verifyAuthentication({ credentials = [], ...request }) {
-    const { record, refusal } = await claim('authentication', request);
+  // kind is the policy's, as when the challenge was issued. Returns { ok, credentialId, kind, update }, or
+  // { ok: false, reason }. A verified assertion always carries update ({ kind, counter, deviceType,
+  // backedUp }), even when refused for its kind: the caller merges it into the stored credential, so a
+  // counter only moves forward and a kind that fell stays down.
+  async function verifyAuthentication({ credentials = [], kind = 'any', ...request }) {
+    const { record, refusal } = await claim('authentication', request, { kind: requiredKind(kind) });
     if (refusal) return refusal;
     const { response } = request;
     const credential = credentials.find((candidate) => candidate.id === response.id);
@@ -269,9 +277,9 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
       return { ok: false, reason: 'not_verified', detail: error.message };
     }
     const flags = { deviceType: info.credentialDeviceType, backedUp: info.credentialBackedUp };
-    const kind = currentKind(credential, flags);
-    if (record.kind === 'hardware' && kind !== 'hardware') return { ok: false, reason: 'wrong_kind' };
-    return result(record, { credentialId: credential.id, kind, counter: info.newCounter, ...flags });
+    const update = { kind: currentKind(credential, flags), counter: info.newCounter, ...flags };
+    if (record.kind === 'hardware' && update.kind !== 'hardware') return { ok: false, reason: 'insufficient_kind', credentialId: credential.id, update };
+    return result(record, { credentialId: credential.id, kind: update.kind, update });
   }
 
   return { registrationOptions, verifyRegistration, authenticationOptions, verifyAuthentication, currentKind };
