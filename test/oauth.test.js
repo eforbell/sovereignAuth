@@ -58,7 +58,7 @@ test('start stores a single-use record and sets the correlation cookie; the code
   assert.notEqual(correlation, started.state);
 
   clock += 30_000;
-  const request = { member: member('1001'), headers: { cookie: `__Host-sv_oauth=${correlation}`, referer: oauth.landingUrl }, body: { code: 'abc', state: started.state } };
+  const request = { member: member('1001'), headers: { cookie: `__Host-sv_oauth=${correlation}` }, body: { code: 'abc', state: started.state } };
   const done = await oauth.complete(request);
   assert.equal(done.ok, true, done.reason);
   assert.equal(pkceChallenge(done.codeVerifier), started.codeChallenge, 'the verifier matches the challenge sent to the provider');
@@ -76,7 +76,7 @@ test('a wrong attempt uses the state up, so the right one can\'t follow it', asy
   const oauth = flow({ store });
   const started = await oauth.start(member('1001'));
   const correlation = started.setCookie.split(';')[0].split('=')[1];
-  const right = { member: member('1001'), headers: { cookie: `__Host-sv_oauth=${correlation}`, referer: oauth.landingUrl }, body: { code: 'abc', state: started.state } };
+  const right = { member: member('1001'), headers: { cookie: `__Host-sv_oauth=${correlation}` }, body: { code: 'abc', state: started.state } };
   assert.equal((await oauth.complete({ ...right, member: member('1002') })).reason, 'wrong_member');
   assert.equal((await oauth.complete(right)).reason, 'unknown_state');
 });
@@ -97,7 +97,7 @@ test('the memory store forgets expired records and stays bounded', () => {
   assert.equal(store.take('c'), null, 'taken once');
 });
 
-test('configuration that could point the page elsewhere is refused', () => {
+test('configuration that could point the page elsewhere is refused, and paths on this origin are fine', () => {
   const base = { hostname: vectors.hostname, landingPath: '/oauth/callback', completionPath: 'complete' };
   for (const [name, options, message] of [
     ['upper-case hostname', { hostname: 'Smith-Helm.example.ts.net' }, /hostname/],
@@ -107,9 +107,17 @@ test('configuration that could point the page elsewhere is refused', () => {
     ['protocol-relative completion', { completionPath: '//evil.example/complete' }, /completionPath/],
     ['javascript: done path', { donePath: 'javascript:alert(1)' }, /donePath/],
     ['backslash done path', { donePath: '\\\\evil.example' }, /donePath/],
+    ['a leading NUL before //, which browsers drop', { completionPath: '\u0000//attacker.example/collect' }, /completionPath/],
+    ['a leading tab before //', { donePath: '\t//attacker.example' }, /donePath/],
+    ['a C1 control before //', { donePath: '\u0085//attacker.example' }, /donePath/],
+    ['a path that climbs to another origin', { completionPath: '/\\attacker.example' }, /completionPath/],
+    ['landing path with a NUL', { landingPath: '/oauth/\u0000callback' }, /landingPath/],
     ['a store without take', { store: { put() {} } }, /put\(record\) and take\(state\)/],
   ]) assert.throws(() => createOAuthFlow({ ...base, ...options }), message, name);
   assert.throws(() => flow().landing({ nonce: '"><script>' }), /nonce/);
+  for (const path of ['complete', './complete', '/oauth/complete', '../settings', '.']) {
+    assert.doesNotThrow(() => createOAuthFlow({ ...base, completionPath: path, donePath: path }), path);
+  }
 });
 
 // Runs the landing page's script against a stand-in for the browser: the address bar, history and fetch.
@@ -137,13 +145,13 @@ function runLanding(page, href, respond) {
 test('the landing page needs no cookie, strips the code from the address, posts it once, then moves on', async () => {
   const page = flow().landing();
   assert.equal(page.status, 200);
-  assert.deepEqual(page.headers, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'same-origin' });
+  assert.deepEqual(page.headers, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
 
   const ok = await runLanding(page, `https://${vectors.hostname}/oauth/callback?code=abc&state=xyz&scope=read`, () => ({ ok: true, json: async () => ({ ok: true }) }));
   assert.deepEqual(ok.history, ['/oauth/callback']);
   assert.equal(ok.fetches.length, 1);
   assert.equal(ok.fetches[0].to, 'complete');
-  assert.equal(ok.fetches[0].addressAtSend, `https://${vectors.hostname}/oauth/callback`, 'the code is gone from the address, so not in the Referer');
+  assert.equal(ok.fetches[0].addressAtSend, `https://${vectors.hostname}/oauth/callback`, 'the code is gone from the address before anything is sent');
   assert.deepEqual(JSON.parse(ok.fetches[0].init.body), { code: 'abc', state: 'xyz' });
   assert.equal(ok.fetches[0].init.method, 'POST');
   assert.equal(ok.fetches[0].init.credentials, 'same-origin');
@@ -202,10 +210,10 @@ test('a sibling hostname\'s post to the completion route never reaches the helpe
     const started = await oauth.start(member('1001'));
     const body = { code: 'abc', state: started.state };
     const cookie = started.setCookie.split(';')[0];
-    const sibling = await post({ 'content-type': 'application/json', origin: 'https://smith-home.example-tailnet.ts.net', 'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty', cookie, referer: 'https://smith-home.example-tailnet.ts.net/' }, body);
+    const sibling = await post({ 'content-type': 'application/json', origin: 'https://smith-home.example-tailnet.ts.net', 'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty', cookie }, body);
     assert.equal(sibling.status, 403);
     assert.equal(sibling.body.error, 'request_refused');
-    const own = await post({ 'content-type': 'application/json', origin: `https://${vectors.hostname}`, 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty', cookie, referer: oauth.landingUrl }, body);
+    const own = await post({ 'content-type': 'application/json', origin: `https://${vectors.hostname}`, 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty', cookie }, body);
     assert.deepEqual(own, { status: 200, body: { linked: true } }, 'the state was still there for the real landing page');
   } finally {
     await new Promise((resolve) => server.close(resolve));

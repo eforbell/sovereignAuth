@@ -286,13 +286,15 @@ Cache-Control: no-store
 The only route allowed to act on URL parameters, and only through this sequence:
 
 1. **Start**: the member asks the app, with a mutation-guarded `POST`, to link an account. The app stores a state record `{state, user_id, hostname, correlation, PKCE verifier, created}`. `state` and `correlation` are each 32 random bytes in base64url. The app sets `__Host-sv_oauth=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=600`, then sends the browser to the provider with `state` and a PKCE challenge wherever the provider supports it.
-2. **Landing**: the provider redirects to the app's callback route. That `GET` needs no cookie and changes nothing, and answers with `Cache-Control: no-store` and `Referrer-Policy: same-origin`. It renders a page that reads `code` and `state`, removes them from the address bar (`history.replaceState`), and sends them once. A reload finds nothing to send; an `error` parameter is shown, not sent.
-3. **Completion**: a same-origin JSON `POST` of `{code, state}` to the app's completion route, which passes the mutation guard. The `SameSite=Strict` cookie was withheld on the provider's cross-site redirect, but is sent on this same-origin request. The route takes the state record first, so it is used up whatever happens next, then refuses unless it existed, is at most 10 minutes old, and matches the current member, this hostname and the cookie, and unless `Referer` is exactly the landing page's URL (`https://<hostname><landing path>`, no query): that is how the route knows the landing page sent it, not another page of the app. Only then does the app exchange the code, with the record's PKCE verifier. Every answer clears the cookie.
+2. **Landing**: the provider redirects to the app's callback route. That `GET` needs no cookie and changes nothing, and answers with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. It renders a page that reads `code` and `state`, removes them from the address bar (`history.replaceState`), and sends them once. A reload finds nothing to send; an `error` parameter is shown, not sent.
+3. **Completion**: a same-origin JSON `POST` of `{code, state}` to the app's completion route, which passes the mutation guard. The `SameSite=Strict` cookie was withheld on the provider's cross-site redirect, but is sent on this same-origin request. The route takes the state record first, so it is used up whatever happens next, then refuses unless it existed, is at most 10 minutes old, and matches the current member, this hostname and the cookie. Only then does the app exchange the code, with the record's PKCE verifier. Every answer clears the cookie.
+
+The boundary is the origin. The mutation guard keeps every other origin, sibling hostnames included, from posting to the completion route. Pages on the app's own origin are trusted: any of them can fetch or frame the landing page and read what it reads, and set a `Referer` of their choosing, so the route does not try to tell them apart. On the shared low-friction hostname that origin is every low-friction app (D14).
 
 A refusal is `400` (a body that isn't `{code, state}` of the right shape) or `403`:
 
 ```
-{"error": "oauth_refused", "reason": "malformed" | "unknown_state" | "expired" | "wrong_member" | "wrong_hostname" | "no_cookie" | "duplicate_cookie" | "wrong_correlation" | "not_from_landing"}
+{"error": "oauth_refused", "reason": "malformed" | "unknown_state" | "expired" | "wrong_member" | "wrong_hostname" | "no_cookie" | "duplicate_cookie" | "wrong_correlation"}
 ```
 
 The state store is the app's: anything with `put(record)` and a `take(state)` that returns a record at most once. The library's default keeps records in memory.

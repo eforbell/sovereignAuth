@@ -18,8 +18,7 @@
     },
     "member": "1001",
     "headers": {
-      "cookie": "__Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc",
-      "referer": "https://smith-helm.example-tailnet.ts.net/oauth/callback"
+      "cookie": "__Host-sv_oauth=ccccccccccccccccccccccccccccccccccccccccccc"
     },
     "body": {
       "code": "provider-code-123",
@@ -162,47 +161,12 @@
       }
     },
     {
-      "name": "no Referer",
-      "headers_set": {
-        "referer": null
-      },
-      "expect": {
-        "ok": false,
-        "status": 403,
-        "reason": "not_from_landing"
-      }
-    },
-    {
-      "name": "from another page of the app",
+      "name": "a Referer plays no part: pages on this origin are trusted, and could set any",
       "headers_set": {
         "referer": "https://smith-helm.example-tailnet.ts.net/settings"
       },
       "expect": {
-        "ok": false,
-        "status": 403,
-        "reason": "not_from_landing"
-      }
-    },
-    {
-      "name": "from the landing page with the code still in the address",
-      "headers_set": {
-        "referer": "https://smith-helm.example-tailnet.ts.net/oauth/callback?code=provider-code-123&state=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
-      },
-      "expect": {
-        "ok": false,
-        "status": 403,
-        "reason": "not_from_landing"
-      }
-    },
-    {
-      "name": "from a sibling hostname's landing path",
-      "headers_set": {
-        "referer": "https://smith-home.example-tailnet.ts.net/oauth/callback"
-      },
-      "expect": {
-        "ok": false,
-        "status": 403,
-        "reason": "not_from_landing"
+        "ok": true
       }
     },
     {

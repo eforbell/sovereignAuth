@@ -4,6 +4,10 @@
 // nothing and needs no cookie: it renders a page that strips code and state from the address bar and sends
 // them once. Completion (a same-origin JSON POST from that page, behind the mutation guard) takes the record,
 // checks everything, and only then hands the app the code to exchange.
+//
+// The boundary is the origin. The mutation guard keeps every other origin, sibling hostnames included, away
+// from the completion route. Pages on this origin are trusted: any of them could fetch or frame the landing
+// page and read what it reads, so nothing here pretends to tell them apart (a Referer, say, is theirs to set).
 
 const crypto = require('node:crypto');
 
@@ -58,10 +62,19 @@ function oauthCookie(headers) {
 const setCookie = (value, maxAge) => `${COOKIE_NAME}=${value}; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=${maxAge}`;
 const CLEAR_COOKIE = setCookie('', 0);
 
-// A same-origin path for the page to post to: no scheme, no host, nothing a browser could read as another
-// origin.
-function checkRelativePath(value, what) {
-  if (typeof value !== 'string' || !value || /[:\\\s]/.test(value) || value.startsWith('//')) throw new Error(`${what} must be a path on this hostname`);
+// A path the landing page posts to or moves on to. Browsers drop leading control characters and read a
+// backslash as a slash, so those are refused outright; what is left must resolve, from the landing page,
+// to this origin.
+function checkSameOriginPath(value, what, landingUrl) {
+  const fail = () => { throw new Error(`${what} must be a path on this hostname`); };
+  if (typeof value !== 'string' || !value || /[\u0000-\u0020\u007f-\u009f\\:]/.test(value)) fail();
+  let resolved;
+  try {
+    resolved = new URL(value, landingUrl);
+  } catch {
+    fail();
+  }
+  if (resolved.origin !== new URL(landingUrl).origin) fail();
   return value;
 }
 
@@ -90,17 +103,18 @@ function landingScript({ completionPath, donePath }) {
 }
 
 // createOAuthFlow({ hostname, landingPath, completionPath, donePath, store, now }):
-// - hostname: this app's service hostname (lower case), which the record and the Referer must name;
-// - landingPath: the provider's redirect target as the browser sees it (with any mount prefix);
+// - hostname: this app's service hostname (lower case), which the record must name;
+// - landingPath: the provider's redirect target as the browser sees it (with any mount prefix), so that
+//   landingUrl is the redirect URI to register;
 // - completionPath, donePath: where the landing page posts, and where it goes after; relative to it or
 //   absolute paths on this hostname.
 function createOAuthFlow({ hostname, landingPath, completionPath, donePath = '.', store = createMemoryStateStore(), now = Date.now } = {}) {
   if (typeof hostname !== 'string' || !/^[a-z0-9.-]+$/.test(hostname)) throw new Error('createOAuthFlow needs this app\'s hostname, in lower case');
-  if (typeof landingPath !== 'string' || !landingPath.startsWith('/') || landingPath.startsWith('//') || /[?#\s]/.test(landingPath)) throw new Error('landingPath is the callback\'s absolute path as the browser sees it');
-  checkRelativePath(completionPath, 'completionPath');
-  checkRelativePath(donePath, 'donePath');
+  if (typeof landingPath !== 'string' || !landingPath.startsWith('/') || landingPath.startsWith('//') || /[?#\\\u0000-\u0020\u007f-\u009f]/.test(landingPath)) throw new Error('landingPath is the callback\'s absolute path as the browser sees it');
   if (!store || typeof store.put !== 'function' || typeof store.take !== 'function') throw new Error('an OAuth state store needs put(record) and take(state)');
   const landingUrl = `https://${hostname}${landingPath}`;
+  checkSameOriginPath(completionPath, 'completionPath', landingUrl);
+  checkSameOriginPath(donePath, 'donePath', landingUrl);
 
   // Step 1, from the app's guarded POST. The app sends the browser to the provider with state (and the
   // PKCE challenge, unless the provider has no PKCE) and sets the cookie. data is the app's own, returned
@@ -118,8 +132,7 @@ function createOAuthFlow({ hostname, landingPath, completionPath, donePath = '.'
   }
 
   // Step 2, the provider's redirect: the same page for every request, no cookie read, nothing stored.
-  // Referrer-Policy same-origin lets the completion route see that this page sent it, and nothing
-  // leaves for other sites.
+  // It arrives with the code in its address, so it sends no Referer anywhere.
   function landing({ nonce } = {}) {
     if (nonce !== undefined && !/^[A-Za-z0-9+/=_-]+$/.test(nonce)) throw new Error('a CSP nonce is base64');
     const body = `<!doctype html>
@@ -132,7 +145,7 @@ function createOAuthFlow({ hostname, landingPath, completionPath, donePath = '.'
       headers: {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
-        'referrer-policy': 'same-origin',
+        'referrer-policy': 'no-referrer',
       },
       body,
     };
@@ -154,7 +167,6 @@ function createOAuthFlow({ hostname, landingPath, completionPath, donePath = '.'
     const cookie = oauthCookie(headers);
     if (!cookie.value) return refuse(403, cookie.reason);
     if (!sameText(cookie.value, record.correlation)) return refuse(403, 'wrong_correlation');
-    if (headers.referer !== landingUrl) return refuse(403, 'not_from_landing');
     return { ok: true, code, codeVerifier: record.codeVerifier, data: record.data, clearCookie: CLEAR_COOKIE };
   }
 
