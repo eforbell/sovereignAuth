@@ -47,6 +47,27 @@ test('configuration errors stop the app, they are never a quiet allow', async ()
   await assert.rejects(assurance().check('privileged-plan', { method: 'POST', url: '/', headers: PARENT, body: '' }, { target: 'a\nb' }), /no line breaks/);
   await assert.rejects(assurance().check('privileged-plan', { method: 'POST', url: '/', headers: { ...PARENT, 'content-length': '12' } }, { target: '' }), /raw request body/);
   assert.throws(() => requestDigest({ method: 'POST', url: '/', body: { plan: 'restore' }, target: '' }), /raw body bytes/);
+  assert.throws(() => requestDigest({ method: 'POST', url: '/', body: null, target: '' }), /raw body bytes/);
+  await assert.rejects(assurance().check('privileged-plan', { method: 'POST', url: '/', headers: { ...PARENT, 'content-length': '4' }, body: null }, { target: '' }), /raw request body/, 'a parsed JSON null is not the bytes');
+  await assert.rejects(assurance().check('privileged-plan', { method: 'POST', url: '/', headers: { ...PARENT, 'transfer-encoding': 'chunked' } }, { target: '' }), /raw request body/);
+});
+
+// The flag lives in Home Base's database, so the check may well be async; a pending answer is not a yes.
+test('administrator: awaited, and only true counts', async () => {
+  const cookie = `__Host-sv_assurance=${signToken(vectors.base_claims.assurance, K1)}`;
+  const request = { method: 'GET', url: '/admin', headers: { ...PARENT, cookie } };
+  for (const [name, isAdministrator, allowed] of [
+    ['async no', async () => false, false],
+    ['async yes', async () => true, true],
+    ['truthy but not true', () => 'yes', false],
+    ['async truthy but not true', async () => 1, false],
+    ['nothing', () => undefined, false],
+  ]) {
+    const decision = await assurance({ isAdministrator }).check('open-admin', request);
+    assert.equal(decision.allowed, allowed, name);
+    if (!allowed) assert.deepEqual([decision.status, decision.reason], [403, 'not_administrator'], name);
+  }
+  await assert.rejects(assurance({ isAdministrator: async () => { throw new Error('database down'); } }).check('open-admin', request), /database down/, 'an error is an error, not a yes');
 });
 
 test('cookie parsing: exact name, one value, other cookies ignored', () => {

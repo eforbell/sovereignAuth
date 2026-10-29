@@ -24,7 +24,8 @@ const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest();
 // The request digest an action token is bound to (section 9). body is the raw bytes the app received.
 function requestDigest({ method, url, body, target }) {
   checkTarget(target);
-  let bytes = body ?? Buffer.alloc(0);
+  // undefined is no body; anything but bytes or text (a parsed body, null) can't be what was received.
+  let bytes = body === undefined ? Buffer.alloc(0) : body;
   if (typeof bytes === 'string') bytes = Buffer.from(bytes, 'utf8');
   if (!Buffer.isBuffer(bytes)) throw new Error('the request digest needs the raw body bytes, not a parsed body');
   const text = ['sovereign-action/1', String(method).toUpperCase(), String(url), sha256(bytes).toString('base64url'), target].join('\n');
@@ -71,7 +72,7 @@ function claimsHold(payload, { typ, snapshot, member, hostname, policy }) {
 // { method, url, headers, body }, { target }) resolves to { allowed: true, member, level } or
 // { allowed: false, status, body, reason }. hostname is this app's service hostname, which cookies and
 // tokens must name exactly. isAdministrator(member) is required for policies that need an administrator
-// (only Home Base has them: the flag is Home Base's, D10).
+// (only Home Base has them: the flag is Home Base's, D10); it may be async, and only true counts.
 function createAssurance({ appId, hostname, identity, redeem, isAdministrator, now = Date.now, log = () => {} } = {}) {
   if (typeof appId !== 'string' || !appId) throw new Error('createAssurance needs the app\'s ID');
   if (typeof hostname !== 'string' || !/^[a-z0-9.-]+$/.test(hostname)) throw new Error('createAssurance needs this app\'s hostname, in lower case');
@@ -101,7 +102,7 @@ function createAssurance({ appId, hostname, identity, redeem, isAdministrator, n
 
   async function checkActionToken(key, policy, request, target, { snapshot, member }) {
     // Without the raw bytes the digest would cover an empty body, and the token would not bind what is sent.
-    if (request.body === undefined && hasBody(request.headers)) throw new Error('every-time actions need the raw request body');
+    if ((request.body === undefined || request.body === null) && hasBody(request.headers)) throw new Error('every-time actions need the raw request body');
     const digest = requestDigest({ method: request.method, url: request.url, body: request.body, target });
     const challenge = (reason) => stepUp(key, policy, reason, { target, digest });
     const header = request.headers?.[ACTION_HEADER];
@@ -132,7 +133,7 @@ function createAssurance({ appId, hostname, identity, redeem, isAdministrator, n
     let decision;
     if (!member) {
       decision = refuse(403, { error: 'not_a_member', reason }, reason);
-    } else if (policy.administrator && !isAdministrator(member)) {
+    } else if (policy.administrator && (await isAdministrator(member)) !== true) {
       decision = refuse(403, { error: 'not_authorized', policy: key }, 'not_administrator');
     } else if (policy.level === 'session' || policy.level === 'recent') {
       decision = checkCookie(key, policy, request.headers, { snapshot, member });
