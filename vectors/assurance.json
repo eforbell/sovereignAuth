@@ -494,7 +494,7 @@
       }
     },
     {
-      "name": "session: prefix in another letter case",
+      "name": "session: prefix in another letter case (Safari lets a sibling plant __HOST-)",
       "policy": "open-documents",
       "identity": {
         "x-sovereign-user-id": "1001",

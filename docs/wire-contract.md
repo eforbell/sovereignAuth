@@ -181,7 +181,7 @@ Set by Home Base's passkey service under `/_sovereign/auth/` on the hostname whe
 Set-Cookie: __Host-sv_assurance=<token>; Secure; HttpOnly; Path=/; SameSite=Strict
 ```
 
-No `Domain`. The `__Host-` prefix matters here: a sibling hostname is same-site and could otherwise plant a cookie (D20). The app reads only a cookie named exactly `__Host-sv_assurance`. Any other name, including `sv_assurance` without the prefix, is ignored, and more than one cookie with that name fails.
+No `Domain`. The `__Host-` prefix matters here: a sibling hostname is same-site and could otherwise plant a cookie (D20). The app reads only a cookie named exactly `__Host-sv_assurance`. Any other name, including `sv_assurance` without the prefix, is ignored, and more than one cookie with that name fails. The match is case-sensitive: Safari (tested 2026-10-29) lets a sibling page set `__HOST-sv_assurance` with a `Domain`, because it doesn't treat the prefix as case-insensitive, while Chromium refuses it. The OAuth correlation cookie (section 10) follows the same rule.
 
 | Field | Meaning | Checked against |
 | --- | --- | --- |
