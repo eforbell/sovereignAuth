@@ -121,14 +121,30 @@ function createMemoryChallengeStore({ maxEntries = 1000, now = Date.now } = {}) 
   };
 }
 
-// createWebAuthn({ rpID, rpName, roots, store, now }):
+// Explicit handles are opaque bytes transported as canonical, unpadded base64url, never UTF-8 IDs.
+function userHandleBytes(value) {
+  const bytes = typeof value === 'string' && value.length <= 86 ? Buffer.from(value, 'base64url') : Buffer.alloc(0);
+  if (!bytes.length || bytes.length > 64 || bytes.toString('base64url') !== value) {
+    throw new TypeError('userHandle must be canonical base64url encoding 1-64 bytes.');
+  }
+  return bytes;
+}
+
+// createWebAuthn({ rpID, rpName, roots, store, now, requireUserHandle }):
 // - rpID: the tailnet domain (D17), the same for every hostname in it;
 // - roots: attestation roots in the attestation-roots.json format; the pinned list unless given. With none,
 //   nothing is hardware and every attested registration is refused.
-function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.roots, store = createMemoryChallengeStore(), now = Date.now } = {}) {
+function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.roots, store = createMemoryChallengeStore(), now = Date.now, requireUserHandle = false } = {}) {
+  if (typeof requireUserHandle !== 'boolean') throw new TypeError('requireUserHandle must be boolean');
   if (typeof rpID !== 'string' || !HOSTNAME.test(rpID)) throw new Error('createWebAuthn needs the tailnet domain as rpID, in lower case');
   if (!store || typeof store.put !== 'function' || typeof store.take !== 'function') throw new Error('a challenge store needs put(record) and take(challenge)');
   const anchors = loadRoots(roots);
+
+  function registrationHandle(member) {
+    if (!member?.userId) throw new Error('a ceremony is for a member');
+    if (member.userHandle === undefined && !requireUserHandle) return isoBase64URL.fromUTF8String(member.userId);
+    return userHandleBytes(member.userHandle).toString('base64url');
+  }
 
   function context({ hostname, member, purpose, audience = hostname, action = null }) {
     if (typeof hostname !== 'string' || !HOSTNAME.test(hostname) || !hostname.endsWith(`.${rpID}`)) throw new Error(`${hostname} is not a hostname in ${rpID}`);
@@ -165,10 +181,11 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
     const record = context(request);
     if (attestation !== 'none' && attestation !== 'direct') throw new Error('attestation is none or direct');
     const { member } = request;
+    const userHandle = registrationHandle(member);
     const options = await generateRegistrationOptions({
       rpName,
       rpID,
-      userID: Buffer.from(member.userId, 'utf8'),
+      userID: Buffer.from(userHandle, 'base64url'),
       userName: member.login || member.userId,
       userDisplayName: member.name || member.login || member.userId,
       attestationType: attestation,
@@ -177,13 +194,13 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
       supportedAlgorithmIDs: ALGORITHMS,
       timeout: CHALLENGE_SECONDS * 1000,
     });
-    await store.put({ challenge: options.challenge, ceremony: 'registration', ...record, attestation, expires: now() + CHALLENGE_SECONDS * 1000 });
+    await store.put({ challenge: options.challenge, ceremony: 'registration', ...record, user_handle: userHandle, attestation, expires: now() + CHALLENGE_SECONDS * 1000 });
     return options;
   }
 
   // Returns { ok, credential } with the credential to store, or { ok: false, reason }.
   async function verifyRegistration(request) {
-    const { record, refusal } = await claim('registration', request);
+    const { record, refusal } = await claim('registration', request, { user_handle: registrationHandle(request.member) });
     if (refusal) return refusal;
     let fmt;
     let x5c;
@@ -217,6 +234,7 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
     return result(record, {
       credential: {
         id: info.credential.id,
+        userHandle: record.user_handle,
         publicKey: isoBase64URL.fromBuffer(info.credential.publicKey),
         counter: info.credential.counter,
         transports: info.credential.transports || [],
@@ -269,8 +287,16 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
     const { response } = request;
     const credential = credentials.find((candidate) => candidate.id === response.id);
     if (!credential) return { ok: false, reason: 'unknown_credential' };
+    let expectedHandle;
+    try {
+      expectedHandle = credential.userHandle === undefined && !requireUserHandle
+        ? isoBase64URL.fromUTF8String(record.userId)
+        : userHandleBytes(credential.userHandle).toString('base64url');
+    } catch {
+      return { ok: false, reason: 'invalid_credential_handle' };
+    }
     const userHandle = response.response?.userHandle;
-    if (userHandle !== undefined && userHandle !== null && userHandle !== isoBase64URL.fromUTF8String(record.userId)) return { ok: false, reason: 'wrong_member' };
+    if (userHandle !== undefined && userHandle !== null && userHandle !== expectedHandle) return { ok: false, reason: 'wrong_member' };
     let info;
     try {
       const verification = await verifyAuthenticationResponse({
