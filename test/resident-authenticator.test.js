@@ -81,3 +81,32 @@ test('non-discoverable credentials do not replace the same user, require an allo
   assert.equal(key.authenticate(assertion([second.id]), { userHandle: null }).response.userHandle, null);
   assert.throws(() => key.register({ ...options('x'), authenticatorSelection: { residentKey: 'required' } }), { name: 'NotSupportedError' });
 });
+
+
+test('signer hash-forging settings do not change the physical RP storage scope', () => {
+  const key = createResidentAuthenticator();
+  const first = key.register(options('same'), { rpID: 'evil.ts.net' });
+  assert.equal(key.authenticate(assertion([first.id])).id, first.id);
+  assert.throws(() => key.register({ ...options('other'), excludeCredentials: [{ id: first.id }] }), { name: 'InvalidStateError' });
+  const second = key.register(options('same'));
+  assert.equal(key.hasCredential(first.id), false);
+  assert.equal(key.hasCredential(second.id), true);
+});
+
+test('one physical key reports one stable AAGUID across fresh registration keys', async () => {
+  const service = createWebAuthn({ rpID });
+  const key = createResidentAuthenticator();
+  const first = await enroll(service, key, 'prod');
+  const second = await enroll(service, key, 'rehearsal');
+  assert.equal(first.aaguid, second.aaguid);
+  assert.notEqual(first.publicKey, second.publicKey);
+});
+
+test('the resident model rejects malformed or noncanonical user.id without changing held storage', () => {
+  const key = createResidentAuthenticator();
+  const first = key.register(options('same'));
+  for (const id of [undefined, null, '', 'not base64!', 'AB', 'AA==', Buffer.alloc(65).toString('base64url')]) {
+    assert.throws(() => key.register({ ...options('ignored'), user: { id } }), /user.id/);
+    assert.equal(key.hasCredential(first.id), true);
+  }
+});
