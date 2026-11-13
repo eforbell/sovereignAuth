@@ -42,6 +42,9 @@ test('strict handles let independent suites for the same identity retain one phy
   assert.equal(second.options.user.id, rehearsal.member.userHandle);
   assert.equal(first.credential.userHandle, alice.member.userHandle);
   assert.equal(second.credential.userHandle, rehearsal.member.userHandle);
+  for (const userHandle of [legacyHandle, rehearsal.member.userHandle]) {
+    assert.equal((await check(a, key, alice, first.credential, { userHandle })).reason, 'wrong_member');
+  }
   for (const [service, context, credential] of [[a, alice, first.credential], [b, rehearsal, second.credential], [a, alice, first.credential]]) {
     assert.equal(key.hasCredential(credential.id), true);
     assert.equal((await check(service, key, context, credential)).ok, true);
@@ -101,7 +104,7 @@ test('strict assertions use the selected credential expectation, not the current
   const { credential } = await enroll(legacyService, key, context);
   const withNewHandle = request('prod', handle());
   assert.equal((await check(strict, key, withNewHandle, credential)).ok, true);
-  for (const userHandle of [handle(), '', legacyHandle + '=']) {
+  for (const userHandle of [withNewHandle.member.userHandle, handle(), '', legacyHandle + '=']) {
     assert.equal((await check(strict, key, withNewHandle, credential, { userHandle })).reason, 'wrong_member');
   }
 });
@@ -139,7 +142,33 @@ test('credential ownership is checked before handle metadata, and handles cannot
   const { credential } = await enroll(service, key, context);
   const started = await startCheck(service, key, context, credential);
   assert.equal((await service.verifyAuthentication({ ...started.request, response: started.response, credentials: [] })).reason, 'unknown_credential');
+  const selected = await startCheck(service, key, context, credential);
+  const corruptSibling = { ...credential, id: 'other', userHandle: null };
+  assert.equal((await service.verifyAuthentication({ ...selected.request, response: selected.response, credentials: [corruptSibling, credential] })).ok, true);
+  const unknown = await startCheck(service, key, context, credential, { userHandle: 'x' });
+  assert.equal((await service.verifyAuthentication({ ...unknown.request, response: unknown.response, credentials: [{ ...credential, id: 'other' }] })).reason, 'unknown_credential');
   const forged = await startCheck(service, key, context, credential);
   forged.response.response.signature = Buffer.alloc(64).toString('base64url');
   assert.equal((await service.verifyAuthentication({ ...forged.request, response: forged.response, credentials: [credential] })).reason, 'not_verified');
+});
+
+
+test('invalid finish configuration does not take a challenge; missing members keep the domain error', async () => {
+  const service = createWebAuthn({ rpID, requireUserHandle: true });
+  const context = request('prod', handle());
+  const options = await service.registrationOptions(context);
+  const response = createResidentAuthenticator().register(options, { origin: origin(context) });
+  await assert.rejects(service.verifyRegistration({ ...context, member: undefined, response }), /for a member/);
+  await assert.rejects(service.verifyRegistration({ ...context, member: { ...context.member, userHandle: undefined }, response }), /userHandle/);
+  assert.equal((await service.verifyRegistration({ ...context, response })).ok, true);
+});
+
+test('legacy compatibility preserves UTF-8 identity bytes for non-ASCII callers', async () => {
+  const service = createWebAuthn({ rpID });
+  const context = request('legacy', undefined);
+  context.member.userId = 'test-identité-用户';
+  const key = createResidentAuthenticator();
+  const enrolled = await enroll(service, key, context);
+  assert.equal(enrolled.options.user.id, Buffer.from(context.member.userId, 'utf8').toString('base64url'));
+  assert.equal((await check(service, key, context, enrolled.credential)).ok, true);
 });

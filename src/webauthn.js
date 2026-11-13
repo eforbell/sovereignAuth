@@ -123,7 +123,7 @@ function createMemoryChallengeStore({ maxEntries = 1000, now = Date.now } = {}) 
 
 // Explicit handles are opaque bytes transported as canonical, unpadded base64url, never UTF-8 IDs.
 function userHandleBytes(value) {
-  const bytes = typeof value === 'string' ? Buffer.from(value, 'base64url') : Buffer.alloc(0);
+  const bytes = typeof value === 'string' && value.length <= 86 ? Buffer.from(value, 'base64url') : Buffer.alloc(0);
   if (!bytes.length || bytes.length > 64 || bytes.toString('base64url') !== value) {
     throw new TypeError('userHandle must be canonical base64url encoding 1-64 bytes.');
   }
@@ -141,6 +141,7 @@ function createWebAuthn({ rpID, rpName = 'The Sovereign Home', roots = PINNED.ro
   const anchors = loadRoots(roots);
 
   function registrationHandle(member) {
+    if (!member?.userId) throw new Error('a ceremony is for a member');
     if (member.userHandle === undefined && !requireUserHandle) return isoBase64URL.fromUTF8String(member.userId);
     return userHandleBytes(member.userHandle).toString('base64url');
   }

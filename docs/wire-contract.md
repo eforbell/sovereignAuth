@@ -316,6 +316,8 @@ Home Base's passkey service runs the ceremonies (SID-005); apps only read the `k
 
 `createWebAuthn({ requireUserHandle: true })` requires explicit valid registration handles and valid per-credential expected handles. Invalid descriptor metadata refuses with `invalid_credential_handle`, even if the assertion omits its handle. Compatibility defaults to `false`: absent/undefined registration/descriptor metadata alone falls back to UTF-8 `member.userId`. Explicit null/empty/malformed/oversized metadata never falls back. A Home Base adapter uses strict mode and computes the expectation for each legacy credential explicitly. This is additive ceremony metadata, not a change to directory user IDs, snapshot format or token subjects.
 
+Assertion-handle mismatches refuse as `wrong_member`. A legacy descriptor's explicit expectation is unpadded `base64url(UTF-8(member.userId))`. Invalid caller registration handles throw at both start and finish before taking a challenge; a changed valid resolved handle consumes/refuses it as `wrong_user_handle`. Authentication descriptor metadata is validated for the selected credential at finish, not during options generation; an adapter should validate stored metadata before prompting. Challenges issued by an older implementation without the new handle binding cannot finish under the new contract and must be restarted.
+
 **Kinds** come from what the authenticator proves. What the member asked for when enrolling plays no part:
 
 | Kind | When |
