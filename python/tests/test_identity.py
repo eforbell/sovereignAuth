@@ -155,6 +155,14 @@ class ParityTests(unittest.TestCase):
         guard = create_request_guard("https://example.com", isolate=False, content_types=["1e-07"])
         self.assertEqual(guard.check("POST", {"origin": "https://example.com", "content-type": [1e-7]}).reason, "content_type", "String(1e-7) is 1e-7")
 
+    def test_objects_stringify_as_plain_objects(self):
+        from sovereign_auth._js import to_string
+
+        self.assertEqual(to_string([{"x": "; a=b;"}, ["c"]]), "[object Object],c")
+        guard = create_request_guard("https://example.com", isolate=False)
+        smuggled = {"origin": "https://example.com", "content-type": [{"x": "application/json"}]}
+        self.assertEqual(guard.check("POST", smuggled).reason, "content_type")
+
     def test_content_types_are_strings(self):
         with self.assertRaises(ValueError):
             create_request_guard("https://example.com", content_types=[None])

@@ -68,7 +68,9 @@ def to_string(value: Any) -> str:
         return ",".join("" if item is None else to_string(item) for item in value)
     if is_number(value):
         return number_to_string(value)
-    return str(value)
+    # Any other object: what Object.prototype.toString gives a plain object, never Python's repr, which
+    # could carry text (a cookie, say) that JavaScript would not.
+    return "[object Object]"
 
 
 def number_to_string(value: int | float) -> str:
