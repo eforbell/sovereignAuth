@@ -131,6 +131,31 @@ class OAuthFlowTests(unittest.TestCase):
         self.assertTrue(done.ok, done.reason)
         self.assertEqual(records, {})
 
+    def test_codex_round_two(self):
+        """Inputs Node refuses that the port accepted; expected values are Node's."""
+        for hostname in ["1.2.3.999", "999.1.1.1", "0x7f.1"]:
+            with self.subTest(hostname=hostname), self.assertRaisesRegex(ValueError, "hostname"):
+                OAuthFlow(hostname=hostname, landing_path="/cb", completion_path="/done")
+        # The clock's fractions are kept: started at 1000.9 ms, completed at 1000.5 ms is from the future.
+        clock = {"now": 1000.9}
+        oauth = flow(now=lambda: clock["now"], store=MemoryStateStore(now=lambda: clock["now"]))
+        started = asyncio.run(oauth.start(member("1001")))
+        correlation = started.set_cookie.split(";")[0].split("=")[1]
+        clock["now"] = 1000.5
+        done = asyncio.run(oauth.complete(member=member("1001"), headers={"cookie": f"__Host-sv_oauth={correlation}"}, body={"code": "abc", "state": started.state}))
+        self.assertEqual(done.reason, "expired")
+        # Member IDs compare without coercion: 1 is not True.
+        store = MemoryStateStore(now=lambda: VECTORS["now"])
+        store.put(record_from({**VECTORS["base"]["record"], "userId": 1}))
+        done = asyncio.run(flow(store=store, now=lambda: VECTORS["now"]).complete(member=member(True), headers=VECTORS["base"]["headers"], body=VECTORS["base"]["body"]))
+        self.assertEqual(done.reason, "wrong_member")
+        # An object hidden in a cookie list is [object Object] to JavaScript, not a cookie.
+        store = MemoryStateStore(now=lambda: VECTORS["now"])
+        store.put(record_from(VECTORS["base"]["record"]))
+        hidden = {"cookie": [{"x": "; " + VECTORS["base"]["headers"]["cookie"] + ";"}]}
+        done = asyncio.run(flow(store=store, now=lambda: VECTORS["now"]).complete(member=member("1001"), headers=hidden, body=VECTORS["base"]["body"]))
+        self.assertEqual(done.reason, "no_cookie")
+
     def test_an_empty_correlation_cookie_is_refused_as_node_refuses_it(self):
         store = MemoryStateStore(now=lambda: VECTORS["now"])
         store.put(record_from(VECTORS["base"]["record"]))

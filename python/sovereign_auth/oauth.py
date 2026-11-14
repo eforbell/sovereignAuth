@@ -28,7 +28,9 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from ._js import is_truthy, strict_equal
 from .assurance import _cookie_values
+from .guards import normalize_origin
 from .snapshot import Member
 from .tokens import _utf16_length
 
@@ -67,7 +69,7 @@ class OAuthRecord:
     hostname: str
     correlation: str
     code_verifier: str | None
-    created: int  # milliseconds since the epoch
+    created: float  # milliseconds since the epoch, as the clock gave it
     data: Any = None
 
 
@@ -211,6 +213,13 @@ class OAuthFlow:
     ):
         if not isinstance(hostname, str) or not _HOSTNAME.fullmatch(hostname):
             raise ValueError("an OAuth flow needs this app's hostname, in lower case")
+        # Node builds the landing URL with the URL parser, which refuses a host like 1.2.3.999; a hostname
+        # the parser would refuse or rewrite is refused here too.
+        try:
+            if normalize_origin(f"https://{hostname}") != f"https://{hostname}":
+                raise ValueError
+        except ValueError:
+            raise ValueError("an OAuth flow needs this app's hostname, in lower case") from None
         if (
             not isinstance(landing_path, str)
             or not landing_path.startswith("/")
@@ -242,7 +251,7 @@ class OAuthFlow:
             hostname=self.hostname,
             correlation=_random(),
             code_verifier=verifier,
-            created=int(self._now()),
+            created=self._now(),
             data=data,
         )
         await _resolve(self._store.put(record))
@@ -296,7 +305,7 @@ class OAuthFlow:
         if not 0 <= age <= MAX_AGE_SECONDS * 1000:
             return refuse(403, "expired")
         user_id = getattr(member, "user_id", None)
-        if not user_id or record.user_id != user_id:
+        if not is_truthy(user_id) or not strict_equal(record.user_id, user_id):
             return refuse(403, "wrong_member")
         if record.hostname != self.hostname:
             return refuse(403, "wrong_hostname")
