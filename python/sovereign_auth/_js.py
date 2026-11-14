@@ -42,6 +42,29 @@ def _no_constant(name: str) -> Any:
     raise ValueError(f"{name} is not JSON")
 
 
+def _parse_int(text: str) -> int | float:
+    # JSON.parse reads every number as a double. Past 17 digits nothing is a safe integer anyway, and float()
+    # has no digit limit, where int() refuses more than 4300 digits by default.
+    return int(text) if len(text) <= 17 else float(text)
+
+
 def parse_json(text: str) -> Any:
-    """JSON.parse(): no NaN or Infinity. Raises ValueError (json.JSONDecodeError is one)."""
-    return json.loads(text, parse_constant=_no_constant)
+    """JSON.parse(): no NaN or Infinity. Raises ValueError (json.JSONDecodeError is one), or RecursionError on
+    nesting deeper than Python's stack allows, which callers treat as malformed."""
+    return json.loads(text, parse_constant=_no_constant, parse_int=_parse_int)
+
+
+def to_string(value: Any) -> str:
+    """String(value) for the values a header or method can hold: text, numbers, booleans, None, and lists,
+    which JavaScript joins with ',' (nested ones too), writing null and undefined as nothing."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, (list, tuple)):
+        return ",".join("" if item is None else to_string(item) for item in value)
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e21:
+        return str(int(value))
+    return str(value)

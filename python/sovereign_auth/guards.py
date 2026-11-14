@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from ._js import js_trim
+from ._js import js_trim, to_string
 
 SAFE_METHODS = frozenset({"GET", "HEAD"})
 FETCH_SITES = frozenset({"same-origin", "same-site", "cross-site", "none"})
@@ -34,7 +34,11 @@ MESSAGES = {
     "content_type": "Changes are accepted only as application/json.",
 }
 
-_HOST = re.compile(r"^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?|\[[0-9a-f:.]+\])$")
+_HOST = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?")
+# The WHATWG URL parser reads a host whose last label is a number as IPv4 and rewrites it (127.1 becomes
+# 127.0.0.1, 0x7f.0.0.1 too). Only a dotted quad it would leave alone is accepted.
+_NUMERIC_LABEL = re.compile(r"0[xX][0-9a-fA-F]*|[0-9]+")
+_DOTTED_QUAD = re.compile(r"(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])")
 
 
 @dataclass(frozen=True)
@@ -71,10 +75,13 @@ def normalize_origin(value: Any) -> str:
     if "?" in text or "#" in text or "@" in parts.netloc or parts.path not in ("", "/"):
         raise ValueError(f"an origin has no path, query or credentials: {value}")
     host = (parts.hostname or "").lower()
-    if ":" in host:
-        host = f"[{host}]"
-    if not host or not _HOST.fullmatch(host):
+    # IPv6 literals are refused rather than rewritten into the URL parser's canonical form; service
+    # hostnames are names.
+    if not host or "[" in parts.netloc or not _HOST.fullmatch(host):
         raise ValueError(f"not an origin: {value}")
+    if _NUMERIC_LABEL.fullmatch(host.split(".")[-1] or "x") or host.endswith(".") and _NUMERIC_LABEL.fullmatch(host[:-1].split(".")[-1]):
+        if not _DOTTED_QUAD.fullmatch(host):
+            raise ValueError(f"not an origin the URL parser leaves unchanged: {value}")
     if port is not None and port != DEFAULT_PORTS[scheme]:
         return f"{scheme}://{host}:{port}"
     return f"{scheme}://{host}"
@@ -86,8 +93,8 @@ def header(headers: Mapping[str, Any] | None, name: str) -> str | None:
     if value is None:
         return None
     if isinstance(value, (list, tuple)):
-        return ", ".join(str(item) for item in value)
-    return str(value)
+        return ", ".join("" if item is None else to_string(item) for item in value)
+    return to_string(value)
 
 
 def _check_isolation(method: str, headers: Mapping[str, Any]) -> Decision | None:
@@ -145,10 +152,12 @@ class RequestGuard:
         self.content_types = frozenset(js_trim(str(item)).lower() for item in types)
         if not self.content_types:
             raise ValueError("a request guard needs at least one content type")
-        self.isolate = bool(isolate)
+        if not isinstance(isolate, bool):
+            raise ValueError("isolate is True or False")
+        self.isolate = isolate
 
     def check(self, method: str = "GET", headers: Mapping[str, Any] | None = None) -> Decision:
-        verb = str(method).upper()
+        verb = to_string(method).upper()
         headers = headers or {}
         decision = _check_isolation(verb, headers) if self.isolate else None
         if decision is None and verb not in SAFE_METHODS:

@@ -158,7 +158,7 @@ sovereign-auth @ git+https://github.com/eforbell/sovereignAuth@<commit>#subdirec
 
 Python 3.10 or later; its one dependency is `cryptography`. It covers the app's side only: the request guards, the snapshot reader, and member resolution so far, with the same names in snake case (`create_request_guard`, `SnapshotReader`, `create_identity`, `resolve_member`). Headers are a mapping of lower-case names to a value, or to a list of values for a header sent more than once. A guard joins a list as Node does; an identity header sent twice is no identity. Home Base's side (writing the snapshot, issuing tokens, passkey ceremonies) stays in Node.
 
-Where JavaScript and Python disagree (`true == 1`, JSON `NaN`, what `trim()` strips, safe integers), the port follows JavaScript, so both decide the same way. The one deliberate difference: `written_at` must be an RFC 3339 time with a zone, as Home Base writes it, where Node's `Date.parse` also reads looser forms. This only refuses more.
+Where JavaScript and Python disagree (`true == 1`, JSON `NaN`, what `trim()` strips, safe integers), the port follows JavaScript, so both decide the same way. Deliberate differences, all of which only refuse more: `written_at` must be an RFC 3339 time with a zone, as Home Base writes it, where Node's `Date.parse` also reads looser forms; a configured origin must already be in the form the URL parser would give it (no IPv6, IPv4 shorthand or non-ASCII hosts), or the app refuses to start; and a snapshot nested deeper than Python's JSON parser can go is malformed. A reload that fails in any way replaces the snapshot the reader held.
 
 ## Tests and conformance vectors
 

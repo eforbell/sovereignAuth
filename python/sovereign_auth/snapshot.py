@@ -39,7 +39,7 @@ _BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$")
 # RFC 3339 with a zone, the form Home Base writes (Date.prototype.toISOString). Date.parse in Node reads
 # more spellings than this; anything else is refused here as malformed, which only ever fails closed.
 _TIMESTAMP = re.compile(
-    r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(?:(Z)|([+-])(\d{2}):(\d{2}))$"
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2})(?::([0-9]{2})(?:\.([0-9]+))?)?(?:(Z)|([+-])([0-9]{2}):([0-9]{2}))"
 )
 
 
@@ -92,7 +92,7 @@ def parse_timestamp_ms(text: str) -> int | None:
     year, month, day, hour, minute = (int(match.group(i)) for i in range(1, 6))
     second = int(match.group(6) or 0)
     millis = int((match.group(7) or "0")[:3].ljust(3, "0"))
-    if not (1 <= month <= 12 and 1 <= day <= calendar.monthrange(year, month)[1]):
+    if year < 1 or not (1 <= month <= 12 and 1 <= day <= calendar.monthrange(year, month)[1]):
         return None
     if hour > 23 or minute > 59 or second > 59:
         return None
@@ -339,10 +339,17 @@ class SnapshotReader:
         at = self._now()
         if at - self._checked_at >= self._recheck_ms or at < self._checked_at or self._last is None:
             self._checked_at = at
+            # Whatever goes wrong while reloading replaces what was held: a reload that fails in any way must
+            # never leave the previous snapshot in force until the next re-read.
+            self._last = SnapshotState(ok=False, reason="unreadable", message="the snapshot is being re-read")
             try:
                 self._last = SnapshotState(ok=True, snapshot=self._load())
             except SnapshotError as error:
                 self._last = SnapshotState(ok=False, reason=error.reason, message=str(error))
+            except (RecursionError, MemoryError, ValueError, OverflowError) as error:
+                self._last = SnapshotState(ok=False, reason="malformed", message=f"the snapshot could not be parsed: {type(error).__name__}")
+            except OSError as error:
+                self._last = SnapshotState(ok=False, reason="unreadable", message=f"{self.file}: {error.strerror or error}")
         last = self._last
         if not last.ok or last.snapshot is None:
             return last

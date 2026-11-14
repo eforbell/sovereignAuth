@@ -108,6 +108,8 @@ class ParityTests(unittest.TestCase):
         keys[0]["public_key"] += "\n"
         self.assertEqual(self.reason(changed(keys=keys)), "malformed")
         self.assertEqual(self.reason(changed(written_at="2026-10-28T19:00:00.000Z\n")), "malformed")
+        self.assertEqual(self.reason(changed(written_at="\uff12\uff10\uff12\uff16-10-28T19:00:00Z")), "malformed", "fullwidth digits")
+        self.assertEqual(self.reason(changed(written_at="0000-01-01T00:00:00Z")), "malformed", "a year the calendar can't hold")
         with self.assertRaises(ValueError):
             normalize_origin("https://example.ts.net\n")
 
@@ -128,7 +130,8 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(normalize_origin("https://EXAMPLE.ts.net/"), "https://example.ts.net")
         self.assertEqual(normalize_origin("https://example.ts.net:443"), "https://example.ts.net")
         self.assertEqual(normalize_origin("http://127.0.0.1:8080"), "http://127.0.0.1:8080")
-        for bad in ["example.ts.net", "ftp://example.ts.net", "https://example.ts.net/app", "https://u:p@example.ts.net", "https://example.ts.net?", "https://example.ts.net#x", " https://example.ts.net", "https://bücher.example", "https:\\\\example.ts.net", "https://example.ts.net:99999"]:
+        self.assertEqual(normalize_origin("https://smith-helm.example-tailnet.ts.net"), "https://smith-helm.example-tailnet.ts.net")
+        for bad in ["example.ts.net", "ftp://example.ts.net", "https://example.ts.net/app", "https://u:p@example.ts.net", "https://example.ts.net?", "https://example.ts.net#x", " https://example.ts.net", "https://bücher.example", "https:\\\\example.ts.net", "https://example.ts.net:99999", "http://127.1", "http://0x7f.0.0.1", "http://127.0.0.01", "http://1.2.3.4.", "http://[::1]", "https://example.123"]:
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 normalize_origin(bad)
 
@@ -138,6 +141,17 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(guard.check("GET", twice).reason, "fetch_metadata_malformed")
         origin = {"sec-fetch-site": "same-origin", "content-type": "application/json", "origin": ["https://pulse.example-tailnet.ts.net"] * 2}
         self.assertEqual(guard.check("POST", origin).reason, "origin_mismatch")
+
+    def test_values_stringify_as_javascript_does(self):
+        guard = create_request_guard("https://pulse.example-tailnet.ts.net")
+        self.assertTrue(guard.check("GET", {"sec-fetch-site": [["same-origin"]]}).allowed, "a nested list joins to its one value")
+        self.assertTrue(guard.check(["GET"], {"sec-fetch-site": "same-origin"}).allowed, "String(['GET']) is GET")
+        self.assertEqual(guard.check(None, {"sec-fetch-site": "same-origin"}).reason, "origin_missing", "String(null) is not a safe method")
+
+    def test_isolate_is_a_boolean(self):
+        for value in [[], {}, 0, "", None, "false"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                create_request_guard("https://pulse.example-tailnet.ts.net", isolate=value)
 
     def test_a_guard_needs_an_origin_and_a_content_type(self):
         with self.assertRaises(ValueError):

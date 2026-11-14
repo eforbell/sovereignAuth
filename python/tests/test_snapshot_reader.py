@@ -219,6 +219,50 @@ class SnapshotReaderTests(unittest.TestCase):
         tree.clock = T0 + 15_000
         self.assertEqual(reader.current().snapshot.generation, 8)
 
+    def test_a_reload_that_fails_in_any_way_never_leaves_the_old_snapshot_in_force(self):
+        """A reload that raises something other than SnapshotError (Python's recursion limit on deep JSON, a
+        year the calendar can't hold) must replace the snapshot it held, for this request and the next."""
+        disabled = copy.deepcopy(BASE["members"])
+        disabled[0]["status"] = "disabled"
+        for name, extra, written_at in [
+            ("deep nesting", None, None),
+            ("year zero", None, "0000-01-01T00:00:00Z"),
+        ]:
+            with self.subTest(name):
+                tree = Tree(self)
+                tree.write(snapshot_at(T0, 7))
+                reader = tree.reader()
+                self.assertTrue(reader.current().ok)
+                data = snapshot_at(T0, 8)
+                data["members"] = disabled
+                if written_at:
+                    data["written_at"] = written_at
+                text = json.dumps(data)
+                if name == "deep nesting":
+                    text = text[:-1] + ', "ignored": ' + "[" * 100_000 + "]" * 100_000 + "}"
+                Path(tree.file + ".new").write_text(text, "utf-8")
+                os.chmod(tree.file + ".new", 0o644)
+                os.replace(tree.file + ".new", tree.file)
+                tree.clock = T0 + 5_000
+                first = reader.current()
+                tree.clock = T0 + 5_001
+                second = reader.current()
+                # Python versions differ on how deep their JSON parser goes; either the new snapshot is read
+                # (the member is disabled) or nothing is, but never the old one.
+                for state in (first, second):
+                    if state.ok:
+                        self.assertEqual(state.snapshot.generation, 8, name)
+                    else:
+                        self.assertEqual(state.reason, "malformed", name)
+
+    def test_an_ignored_integer_too_long_for_int_is_still_read(self):
+        """JSON.parse reads any number; Python's int() refuses more than 4300 digits by default."""
+        tree = Tree(self)
+        text = json.dumps(snapshot_at(T0))[:-1] + ', "ignored": ' + "9" * 4301 + "}"
+        Path(tree.file).write_text(text, "utf-8")
+        os.chmod(tree.file, 0o644)
+        self.assertTrue(tree.reader().current().ok)
+
     def test_a_lower_generation_than_one_already_seen_is_refused(self):
         tree = Tree(self)
         reader = tree.reader(recheck_ms=0)
