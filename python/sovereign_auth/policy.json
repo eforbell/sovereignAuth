@@ -1,0 +1,69 @@
+{
+  "format": 1,
+  "description": "The assurance policy matrix (D12, wire contract section 8). Apps name a protected action by its key; the level, credential kind, session window and administrator requirement come from here, never from the app. Language-neutral: ports read this file.",
+  "recent_seconds": 300,
+  "policies": {
+    "use-app": {
+      "level": "tailnet",
+      "kind": "any",
+      "action": "Use a low-friction app (dinner, fasting, help desk, calendar)"
+    },
+    "open-documents": {
+      "level": "session",
+      "window_seconds": 2592000,
+      "kind": "any",
+      "action": "Open finance or estate documents"
+    },
+    "open-operator": {
+      "level": "session",
+      "window_seconds": 86400,
+      "kind": "any",
+      "action": "Open trading or Bitcoin accounting"
+    },
+    "open-admin": {
+      "level": "session",
+      "window_seconds": 28800,
+      "kind": "any",
+      "administrator": true,
+      "action": "Open Home Base admin"
+    },
+    "link-account": {
+      "level": "recent",
+      "kind": "any",
+      "action": "Link an external account"
+    },
+    "export-data": {
+      "level": "recent",
+      "kind": "any",
+      "action": "Export data"
+    },
+    "change-role": {
+      "level": "recent",
+      "kind": "any",
+      "action": "Change a member's parent or kid role"
+    },
+    "manage-own-credential": {
+      "level": "recent",
+      "kind": "any",
+      "action": "A member adds or removes their own credential (Home Base hostname only, D21; a member with no credentials uses an enrollment grant instead, SID-005)"
+    },
+    "manage-admin-credential": {
+      "level": "every-time",
+      "kind": "hardware",
+      "administrator": true,
+      "action": "Administrator adds or removes an administrator credential"
+    },
+    "grant-administrator": {
+      "level": "every-time",
+      "kind": "hardware",
+      "administrator": true,
+      "action": "Grant or remove 'administrator'"
+    },
+    "privileged-plan": {
+      "level": "every-time",
+      "kind": "hardware",
+      "administrator": true,
+      "action": "Privileged Home Base plans (install, repair, adopt, update, uninstall, restore), config changes, publishing changes, rotating secrets"
+    }
+  }
+}

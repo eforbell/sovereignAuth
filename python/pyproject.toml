@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sovereign-auth"
+version = "0.1.0"
+description = "Suite identity for The Sovereign Home (Python port): request guards, directory snapshot, member resolution, assurance, OAuth callbacks, ASGI guard"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+# Ed25519 for the snapshot's signing keys. Every Python app in the suite already locks it.
+dependencies = ["cryptography>=42"]
+
+[tool.setuptools]
+packages = ["sovereign_auth"]
+
+[tool.setuptools.package-data]
+sovereign_auth = ["policy.json"]
