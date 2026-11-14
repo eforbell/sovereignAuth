@@ -148,13 +148,26 @@ if (check.ok) issueAssurance(member, check.kind);
 
 `kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate`: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. That holds only if each read, merge and write runs alone for that credential: lock the read until the write (SQLite's `BEGIN IMMEDIATE`, or `SELECT … FOR UPDATE`), or compare-and-swap and retry. A plain transaction at read-committed isolation is not enough. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
+## Python
+
+`python/` holds the port for Python apps (D13), installed from the same pinned commit:
+
+```
+sovereign-auth @ git+https://github.com/eforbell/sovereignAuth@<commit>#subdirectory=python
+```
+
+Python 3.10 or later; its one dependency is `cryptography`. It covers the app's side only: the request guards, the snapshot reader, and member resolution so far, with the same names in snake case (`create_request_guard`, `SnapshotReader`, `create_identity`, `resolve_member`). Headers are a mapping of lower-case names to a value, or to a list of values for a header sent more than once. A guard joins a list as Node does; an identity header sent twice is no identity. Home Base's side (writing the snapshot, issuing tokens, passkey ceremonies) stays in Node.
+
+Where JavaScript and Python disagree (`true == 1`, JSON `NaN`, what `trim()` strips, safe integers), the port follows JavaScript, so both decide the same way. The one deliberate difference: `written_at` must be an RFC 3339 time with a zone, as Home Base writes it, where Node's `Date.parse` also reads looser forms. This only refuses more.
+
 ## Tests and conformance vectors
 
 ```bash
 npm test
+cd python && python -m unittest discover -s tests   # with cryptography installed
 ```
 
-`vectors/` holds language-neutral JSON cases. Every implementation, including the planned Python port, must pass them unchanged.
+`vectors/` holds language-neutral JSON cases. Every implementation, the Python port included, must pass them unchanged.
 
 ## License
 
