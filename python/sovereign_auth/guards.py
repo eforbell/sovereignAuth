@@ -149,7 +149,9 @@ class RequestGuard:
             raise ValueError("a request guard needs this hostname's origin")
         self.origins = frozenset(normalize_origin(item) for item in items)
         types = [content_types] if isinstance(content_types, str) else list(content_types)
-        self.content_types = frozenset(js_trim(str(item)).lower() for item in types)
+        if not all(isinstance(item, str) for item in types):
+            raise ValueError("content types are strings")
+        self.content_types = frozenset(js_trim(item).lower() for item in types)
         if not self.content_types:
             raise ValueError("a request guard needs at least one content type")
         if not isinstance(isolate, bool):

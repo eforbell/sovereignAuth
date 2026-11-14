@@ -6,6 +6,7 @@ U+FEFF; True == 1; json.loads() reads NaN)."""
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 # ECMAScript WhiteSpace and LineTerminator, the set trim() removes.
@@ -65,6 +66,35 @@ def to_string(value: Any) -> str:
         return "null"
     if isinstance(value, (list, tuple)):
         return ",".join("" if item is None else to_string(item) for item in value)
-    if isinstance(value, float) and value.is_integer() and abs(value) < 1e21:
-        return str(int(value))
+    if is_number(value):
+        return number_to_string(value)
     return str(value)
+
+
+def number_to_string(value: int | float) -> str:
+    """Number.prototype.toString(): the shortest digits that round-trip (Python's repr finds the same ones),
+    laid out by ECMAScript's Number::toString rules."""
+    number = float(value)
+    if number != number:
+        return "NaN"
+    if number in (math.inf, -math.inf):
+        return "Infinity" if number > 0 else "-Infinity"
+    if number == 0:
+        return "0"
+    sign = "-" if number < 0 else ""
+    mantissa, _, exponent = repr(abs(number)).partition("e")
+    whole, _, fraction = mantissa.partition(".")
+    digits = (whole + fraction).lstrip("0")
+    point = len(whole) + int(exponent or 0) - (len(whole + fraction) - len((whole + fraction).lstrip("0")))
+    digits = digits.rstrip("0") or "0"
+    k, n = len(digits), point
+    if k <= n <= 21:
+        text = digits + "0" * (n - k)
+    elif 0 < n <= 21:
+        text = digits[:n] + "." + digits[n:]
+    elif -6 < n <= 0:
+        text = "0." + "0" * (-n) + digits
+    else:
+        e = n - 1
+        text = (digits if k == 1 else digits[0] + "." + digits[1:]) + "e" + ("+" if e >= 0 else "-") + str(abs(e))
+    return sign + text

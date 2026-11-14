@@ -148,6 +148,17 @@ class ParityTests(unittest.TestCase):
         self.assertTrue(guard.check(["GET"], {"sec-fetch-site": "same-origin"}).allowed, "String(['GET']) is GET")
         self.assertEqual(guard.check(None, {"sec-fetch-site": "same-origin"}).reason, "origin_missing", "String(null) is not a safe method")
 
+    def test_numbers_stringify_as_javascript_does(self):
+        from sovereign_auth._js import number_to_string
+
+        self.assertEqual([number_to_string(x) for x in [1e-7, 0.000001, 1e21, 1e20, 100.0, -0.0, 2**53 + 1]], ["1e-7", "0.000001", "1e+21", "100000000000000000000", "100", "0", "9007199254740992"])
+        guard = create_request_guard("https://example.com", isolate=False, content_types=["1e-07"])
+        self.assertEqual(guard.check("POST", {"origin": "https://example.com", "content-type": [1e-7]}).reason, "content_type", "String(1e-7) is 1e-7")
+
+    def test_content_types_are_strings(self):
+        with self.assertRaises(ValueError):
+            create_request_guard("https://example.com", content_types=[None])
+
     def test_isolate_is_a_boolean(self):
         for value in [[], {}, 0, "", None, "false"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
