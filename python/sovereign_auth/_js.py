@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 
 # ECMAScript WhiteSpace and LineTerminator, the set trim() removes.
-JS_WHITESPACE = (
-    "\t\n\x0b\x0c\r \xa0            "
-    "    　﻿"
+JS_WHITESPACE = "".join(
+    chr(code)
+    for code in (
+        0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0xA0, 0x1680,
+        *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF,
+    )
 )
 
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -37,6 +41,44 @@ def safe_integer(value: Any) -> int | None:
             return None
         value = int(value)
     return value if -MAX_SAFE_INTEGER <= value <= MAX_SAFE_INTEGER else None
+
+
+def strict_equal(a: Any, b: Any) -> bool:
+    """a === b for JSON values: no coercion between booleans, numbers and text. Objects and lists are never
+    equal to a claim, as they are never === in JavaScript."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return isinstance(a, bool) and isinstance(b, bool) and a is b
+    if is_number(a) and is_number(b):
+        return a == b
+    if isinstance(a, str) and isinstance(b, str):
+        return a == b
+    return a is None and b is None
+
+
+_JS_NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+_JS_RADIX = re.compile(r"0([xX][0-9a-fA-F]+|[oO][0-7]+|[bB][01]+)")
+
+
+def js_number(value: Any) -> float:
+    """Number(value) for a header value: text, or a list of texts (which JavaScript joins with ','). NaN for
+    anything Number() can't read."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (list, tuple)):
+        value = ",".join(str(item) for item in value)
+    text = js_trim(str(value))
+    if text == "":
+        return 0.0
+    if text in ("Infinity", "+Infinity"):
+        return math.inf
+    if text == "-Infinity":
+        return -math.inf
+    radix = _JS_RADIX.fullmatch(text)
+    if radix:
+        return float(int(radix.group(1)[1:], {"x": 16, "o": 8, "b": 2}[radix.group(1)[0].lower()]))
+    if _JS_NUMBER.fullmatch(text):
+        return float(text)
+    return math.nan
 
 
 def _no_constant(name: str) -> Any:
