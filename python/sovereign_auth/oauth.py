@@ -21,6 +21,7 @@ import json
 import re
 import secrets
 import time
+import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -79,18 +80,21 @@ class MemoryStateStore:
         self._records: OrderedDict[str, OAuthRecord] = OrderedDict()
         self._max_entries = max_entries
         self._now = now
+        self._lock = threading.Lock()  # FastAPI may call from several threads
 
     def put(self, record: OAuthRecord) -> None:
-        for state in list(self._records):
-            entry = self._records[state]
-            if self._now() - entry.created > MAX_AGE_SECONDS * 1000 or len(self._records) >= self._max_entries:
-                del self._records[state]
-            else:
-                break
-        self._records[record.state] = record
+        with self._lock:
+            for state in list(self._records):
+                entry = self._records[state]
+                if self._now() - entry.created > MAX_AGE_SECONDS * 1000 or len(self._records) >= self._max_entries:
+                    del self._records[state]
+                else:
+                    break
+            self._records[record.state] = record
 
     def take(self, state: str) -> OAuthRecord | None:
-        return self._records.pop(state, None)
+        with self._lock:
+            return self._records.pop(state, None)
 
 
 def _oauth_cookie(headers: Mapping[str, Any] | None) -> tuple[str | None, str | None]:
@@ -117,6 +121,11 @@ def _check_same_origin_path(value: Any, what: str, landing_url: str) -> str:
     backslash as a slash, so those are refused outright; what is left must resolve, from the landing page,
     to this origin."""
     if not isinstance(value, str) or not value or _UNSAFE_PATH.search(value):
+        raise ValueError(f"{what} must be a path on this hostname")
+    # A browser reads any run of two or more leading slashes as a host ('///evil.example' is evil.example);
+    # urljoin reads three or more as a path. With no colon, backslash or control character left, a value
+    # not starting with '//' can only resolve to this origin.
+    if value.startswith("//"):
         raise ValueError(f"{what} must be a path on this hostname")
     if _origin(urljoin(landing_url, value)) != _origin(landing_url):
         raise ValueError(f"{what} must be a path on this hostname")

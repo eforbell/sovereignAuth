@@ -163,6 +163,8 @@ class OAuthFlowTests(unittest.TestCase):
             ("landing path with a query", {"landing_path": "/oauth/callback?x=1"}, "landing_path"),
             ("completion on another origin", {"completion_path": "https://evil.example/complete"}, "completion_path"),
             ("protocol-relative completion", {"completion_path": "//evil.example/complete"}, "completion_path"),
+            ("three leading slashes, a host to a browser", {"completion_path": "///evil.example/collect"}, "completion_path"),
+            ("four leading slashes on the done path", {"done_path": "////evil.example/collect"}, "done_path"),
             ("javascript: done path", {"done_path": "javascript:alert(1)"}, "done_path"),
             ("backslash done path", {"done_path": "\\\\evil.example"}, "done_path"),
             ("a leading NUL before //", {"completion_path": "\x00//attacker.example/collect"}, "completion_path"),
