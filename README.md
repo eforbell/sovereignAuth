@@ -129,13 +129,15 @@ Ceremonies for Home Base's passkey service (contract, section 11). Storage is th
 ```js
 const { createWebAuthn, mergeCredentialUpdate } = require('sovereign-auth');
 
-const webauthn = createWebAuthn({ rpID: 'example-tailnet.ts.net' });   // pinned Yubico roots by default
+const webauthn = createWebAuthn({ rpID: 'example-tailnet.ts.net', requireUserHandle: true });   // pinned Yubico roots by default
+// member.userHandle is the member's persisted opaque handle (32 random bytes, base64url).
+// Store it once per independent suite/member, never generate it afresh for each ceremony.
 const request = { hostname: 'smith-admin.example-tailnet.ts.net', member, purpose: 'enroll' };
 
 const options = await webauthn.registrationOptions({ ...request, attestation: 'direct', excludeCredentials: stored });
 // ...navigator.credentials.create({ publicKey: options }) in the browser...
 const result = await webauthn.verifyRegistration({ ...request, response });
-if (result.ok) save(result.credential);   // { id, publicKey, counter, transports, aaguid, kind, root, deviceType, backedUp }
+if (result.ok) save(result.credential);   // { id, userHandle, publicKey, counter, transports, aaguid, kind, root, deviceType, backedUp }
 
 const stepUp = { ...request, purpose: 'step-up', audience: 'family-pulse', action: { act: 'export-data' } };
 const challenge = await webauthn.authenticationOptions({ ...stepUp, credentials: stored, kind: 'hardware' });
@@ -145,6 +147,12 @@ if (check.update) {   // { kind, counter, deviceType, backedUp }, even when refu
 }
 if (check.ok) issueAssurance(member, check.kind);
 ```
+
+`member.userId` remains the authorization identity. `member.userHandle` is an independent, canonical unpadded base64url encoding of 1–64 bytes, bound into registration and returned as `credential.userHandle` from the trusted challenge. Persist the returned value with that credential. Strict mode requires explicit registration handles and valid expected handles on authentication descriptors. A supplied assertion handle must match that selected credential, not the member's current enrollment handle; absent/null assertion handles remain valid for account-identified non-discoverable keys. Ownership, signature and UV checks are unchanged. The response handle is a consistency field, not a signed identity claim.
+
+For old callers, `requireUserHandle` defaults to `false`: only absent/undefined registration or descriptor metadata falls back to UTF-8 `member.userId`. Explicit null, empty, malformed, padded/noncanonical or oversized metadata never falls back. Home Base must use strict mode and explicitly resolve old credentials to their legacy expectation. Independent suites must not reuse that legacy RP-ID/user-handle pair for new registrations; changing it in a database cannot change a credential already held on a key.
+
+Assertion-handle mismatches refuse as `wrong_member`. A legacy descriptor's explicit expectation is unpadded `base64url(UTF-8(member.userId))`. Invalid caller registration handles throw at both start and finish before taking a challenge; a changed valid resolved handle consumes/refuses it as `wrong_user_handle`. Authentication descriptor metadata is validated for the selected credential at finish, not during options generation; an adapter should validate stored metadata before prompting. Registration challenges issued by an older implementation without the new handle binding cannot finish under the new contract and must be restarted.
 
 `kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate`: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. That holds only if each read, merge and write runs alone for that credential: lock the read until the write (SQLite's `BEGIN IMMEDIATE`, or `SELECT … FOR UPDATE`), or compare-and-swap and retry. A plain transaction at read-committed isolation is not enough. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 

@@ -135,8 +135,9 @@ test('a registration returns everything the caller stores, and what it was for',
   const request = { ...STEP_UP, purpose: 'enroll' };
   const result = await enroll(pinnedTest(), authenticator, { request, attestation: 'direct', register: { fmt: 'packed', attestation: chain(pki.leaf, pki.intermediate) } });
   assert.equal(result.ok, true);
-  assert.deepEqual(Object.keys(result.credential).sort(), ['aaguid', 'backedUp', 'counter', 'deviceType', 'id', 'kind', 'publicKey', 'root', 'transports']);
+  assert.deepEqual(Object.keys(result.credential).sort(), ['aaguid', 'backedUp', 'counter', 'deviceType', 'id', 'kind', 'publicKey', 'root', 'transports', 'userHandle']);
   assert.equal(result.credential.id, authenticator.id);
+  assert.equal(result.credential.userHandle, handle(PARENT));
   assert.equal(result.credential.aaguid, [...authenticator.aaguid.toString('hex').matchAll(/(.{8})(.{4})(.{4})(.{4})(.{12})/g)][0].slice(1).join('-'));
   assert.deepEqual({ purpose: result.purpose, audience: result.audience, action: result.action }, { purpose: 'enroll', audience: 'family-pulse', action: STEP_UP.action });
 });
