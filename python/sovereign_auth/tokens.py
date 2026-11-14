@@ -89,7 +89,7 @@ def verify_token(token: Any, *, keys: Mapping[str, Ed25519PublicKey], now: Calla
         return Verified(False, reason="malformed")
     try:
         payload = parse_json(payload_bytes.decode("utf-8", errors="replace"))
-    except ValueError:
+    except (ValueError, RecursionError):  # nesting deeper than Python's parser goes, before any signature check
         return Verified(False, reason="malformed")
     if not isinstance(payload, dict):
         return Verified(False, reason="malformed")

@@ -60,13 +60,15 @@ _JS_RADIX = re.compile(r"0([xX][0-9a-fA-F]+|[oO][0-7]+|[bB][01]+)")
 
 
 def js_number(value: Any) -> float:
-    """Number(value) for a header value: text, or a list of texts (which JavaScript joins with ','). NaN for
-    anything Number() can't read."""
+    """Number(value) for a header value: text, a number, a boolean, or a list (which JavaScript turns into
+    text first, as String() does). NaN for anything Number() can't read."""
     if value is None:
         return 0.0
-    if isinstance(value, (list, tuple)):
-        value = ",".join(str(item) for item in value)
-    text = js_trim(str(value))
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if is_number(value):
+        return float(value)
+    text = js_trim(to_string(value))
     if text == "":
         return 0.0
     if text in ("Infinity", "+Infinity"):
@@ -79,6 +81,23 @@ def js_number(value: Any) -> float:
     if _JS_NUMBER.fullmatch(text):
         return float(text)
     return math.nan
+
+
+def is_truthy(value: Any) -> bool:
+    """JavaScript truthiness for JSON-like values: lists and dicts are true even when empty."""
+    if value is None or value is False:
+        return False
+    if is_number(value):
+        return value == value and value != 0  # NaN is false
+    if isinstance(value, str):
+        return value != ""
+    return True
+
+
+def utf8(text: str) -> bytes:
+    """Text as Node's Buffer.from(text, 'utf8') encodes it: surrogate pairs join, a lone surrogate becomes
+    U+FFFD. Python's encoder refuses lone surrogates."""
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
 
 
 def _no_constant(name: str) -> Any:

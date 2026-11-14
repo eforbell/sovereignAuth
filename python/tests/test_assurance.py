@@ -225,5 +225,66 @@ class PortTests(unittest.TestCase):
                 asyncio.run(check)
 
 
+class CodexRoundOne(unittest.TestCase):
+    """Inputs where the port decided differently from Node before; expected values are Node's."""
+
+    def setUp(self):
+        self.parent = {"x-sovereign-user-id": "1001", "x-sovereign-login": "parent@example.com"}
+        self.token = sign(claims_for("assurance"))
+
+    def assurance(self, **options):
+        settings = dict(app_id=VECTORS["app"], hostname=VECTORS["hostname"], identity=IDENTITY, now=lambda: NOW_MS, is_administrator=lambda member: True)
+        settings.update(options)
+        return Assurance(**settings)
+
+    def check(self, policy, headers, *, body=None, target="", **options):
+        request = AssuranceRequest(method="POST", url="/api/plans", headers={**self.parent, **headers}, body=body)
+        return asyncio.run(self.assurance(**options).check(policy, request, target))
+
+    def test_a_nested_cookie_list_still_shows_the_duplicate(self):
+        cookie = "__Host-sv_assurance=" + self.token
+        decision = self.check("open-documents", {"cookie": [cookie, [cookie]]})
+        self.assertEqual((decision.status, decision.reason), (401, "duplicate_cookie"))
+
+    def test_an_empty_cookie_value_steps_up_with_no_reason(self):
+        decision = self.check("open-documents", {"cookie": "__Host-sv_assurance="})
+        self.assertEqual((decision.status, decision.reason), (401, None))
+
+    def test_any_sign_of_a_body_needs_the_raw_body(self):
+        for headers in [{"content-length": True}, {"content-length": [["1"]]}, {"transfer-encoding": None}, {"content-length": 1}]:
+            with self.subTest(headers=headers), self.assertRaisesRegex(ValueError, "raw request body"):
+                self.check("privileged-plan", headers, redeem=lambda **_: {"redeemed": True})
+        for headers in [{"content-length": False}, {"content-length": ""}, {"content-length": [["1", "2"]]}, {"content-length": None}]:
+            with self.subTest(headers=headers):
+                self.check("privileged-plan", headers, redeem=lambda **_: {"redeemed": True})
+
+    def test_a_null_action_header_is_malformed_not_missing(self):
+        decision = self.check("privileged-plan", {"x-sovereign-action-token": None})
+        self.assertEqual((decision.status, decision.reason), (401, "malformed"))
+
+    def test_the_redeemers_reason_passes_through(self):
+        digest = request_digest(method="POST", url="/api/plans", body=b"{}", target="t")
+        token = sign(claims_for("action", {"set": {"tgt": "t"}}, digest))
+        for answer, reason, body_reason in [({"redeemed": False, "reason": None}, "redemption_null", None), ({"redeemed": False}, "redemption_undefined", "absent")]:
+            decision = self.check("privileged-plan", {"x-sovereign-action-token": token}, body=b"{}", target="t", redeem=lambda **_: answer)
+            self.assertEqual(decision.reason, reason)
+            if body_reason == "absent":
+                self.assertNotIn("reason", decision.body)
+            else:
+                self.assertIsNone(decision.body["reason"])
+
+    def test_a_deeply_nested_unsigned_payload_is_malformed(self):
+        token = "v1." + encode_base64url(("[" * 100_000 + "0" + "]" * 100_000).encode())[:4000] + ".AA"
+        self.assertFalse(verify_token(token, keys=SNAPSHOT.keys, now=lambda: NOW_MS).ok)
+        nested = "v1." + encode_base64url(("[" * 1100 + "0" + "]" * 1100).encode()) + ".AA"
+        self.assertEqual(verify_token(nested, keys=SNAPSHOT.keys, now=lambda: NOW_MS).reason, "malformed")
+
+    def test_lone_surrogates_digest_as_node_encodes_them(self):
+        # Node's UTF-8 encoder writes a lone surrogate as U+FFFD (EF BF BD); a pair as the character.
+        self.assertEqual(request_digest(method="POST", url="/", body="\ud800", target=""), request_digest(method="POST", url="/", body="\ufffd", target=""))
+        self.assertEqual(request_digest(method="POST", url="/", body="\ud83d\ude00", target=""), request_digest(method="POST", url="/", body="\U0001F600", target=""))
+        self.assertEqual(request_digest(method="POST", url="/", body="", target="\udfff"), request_digest(method="POST", url="/", body="", target="\ufffd"))
+
+
 if __name__ == "__main__":
     unittest.main()

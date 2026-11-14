@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any
 
-from ._js import js_number, js_trim, safe_integer, strict_equal
+from ._js import is_truthy, js_number, js_trim, safe_integer, strict_equal, to_string, utf8
 from .identity import Identity
 from .snapshot import Member, Snapshot
 from .tokens import encode_base64url, verify_token
@@ -63,23 +63,26 @@ def request_digest(*, method: str, url: str, body: bytes | str | None, target: s
     if body is None:
         data = b""
     elif isinstance(body, str):
-        data = body.encode("utf-8")
+        data = utf8(body)
     elif isinstance(body, (bytes, bytearray, memoryview)):
         data = bytes(body)
     else:
         raise TypeError("the request digest needs the raw body bytes, not a parsed body")
-    text = "\n".join(["sovereign-action/1", str(method).upper(), str(url), encode_base64url(_sha256(data)), target])
-    return encode_base64url(_sha256(text.encode("utf-8")))
+    text = "\n".join(["sovereign-action/1", to_string(method).upper(), to_string(url), encode_base64url(_sha256(data)), target])
+    return encode_base64url(_sha256(utf8(text)))
 
 
 def _has_body(headers: Mapping[str, Any]) -> bool:
-    return headers.get("transfer-encoding") is not None or js_number(headers.get("content-length") or 0) > 0
+    """headers['transfer-encoding'] !== undefined || Number(headers['content-length'] || 0) > 0: a header
+    present with any value, even None (null), counts."""
+    length = headers.get("content-length")
+    return "transfer-encoding" in headers or js_number(length if is_truthy(length) else 0) > 0
 
 
 def _cookie_values(headers: Mapping[str, Any] | None, name: str) -> list[str]:
     raw = headers.get("cookie") if headers is not None else None
     if isinstance(raw, (list, tuple)):
-        text = "; ".join(str(item) for item in raw)
+        text = "; ".join("" if item is None else to_string(item) for item in raw)
     else:
         text = raw if isinstance(raw, str) else ""
     values = []
@@ -185,14 +188,15 @@ class Assurance:
     def _refuse(status: int, body: dict, reason: str) -> AssuranceDecision:
         return AssuranceDecision(False, status, body, reason)
 
-    def _step_up(self, key: str, policy: dict, reason: str, **extra: Any) -> AssuranceDecision:
+    def _step_up(self, key: str, policy: dict, reason: str | None, **extra: Any) -> AssuranceDecision:
         body = {"error": "step_up_required", "policy": key, "level": policy["level"], "kind": policy["kind"], **extra}
         return self._refuse(401, body, reason)
 
     def _check_cookie(self, key: str, policy: dict, headers: Mapping[str, Any], snapshot: Snapshot, member: Member) -> AssuranceDecision | None:
         token, reason = assurance_cookie(headers)
-        if token is None:
-            return self._step_up(key, policy, reason or "no_cookie")
+        if not token:
+            # As in Node, an empty cookie value is a step-up with no reason (reason None).
+            return self._step_up(key, policy, reason)
         verified = verify_token(token, keys=snapshot.keys, now=self._now)
         if not verified.ok or verified.payload is None:
             return self._step_up(key, policy, verified.reason or "malformed")
@@ -218,9 +222,9 @@ class Assurance:
         def challenge(reason: str) -> AssuranceDecision:
             return self._step_up(key, policy, reason, target=target, digest=digest)
 
-        header = request.headers.get(ACTION_HEADER)
-        if header is None:
+        if ACTION_HEADER not in request.headers:
             return challenge("no_token")
+        header = request.headers[ACTION_HEADER]
         if not isinstance(header, str):
             return challenge("malformed")
         verified = verify_token(header, keys=snapshot.keys, now=self._now)
@@ -246,8 +250,13 @@ class Assurance:
         # Checked here, then redeemed: Home Base consumes the jti and rechecks the member as it stands now.
         result = await self._redeem_token(token=header, policy=key, target=target, digest=digest)
         if result.get("redeemed") is not True:
-            reason = result.get("reason") if isinstance(result.get("reason"), str) else "unavailable"
-            return self._refuse(403, {"error": "step_up_refused", "policy": key, "reason": reason}, f"redemption_{reason}")
+            # Node passes the redeemer's reason through as it is: missing is left out of the body (and is
+            # 'undefined' in the log reason), null stays null.
+            body: dict = {"error": "step_up_refused", "policy": key}
+            if "reason" in result:
+                body["reason"] = result["reason"]
+            shown = "undefined" if "reason" not in result else to_string(result["reason"])
+            return self._refuse(403, body, f"redemption_{shown}")
         return None
 
     async def _redeem_token(self, **request: str) -> dict:
