@@ -15,6 +15,7 @@ import errno
 import os
 import re
 import stat
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -321,6 +322,9 @@ class SnapshotReader:
         self._highest_generation = 0
         self._checked_at: float = float("-inf")
         self._last: SnapshotState | None = None
+        # Python apps call this from several threads (FastAPI runs plain handlers in a pool). Node has one
+        # thread; here a lock keeps reloads one at a time, so an older load can never land after a newer one.
+        self._lock = threading.Lock()
 
     def _load(self) -> Snapshot:
         _check_directories(os.path.dirname(self.file), self.home_base_uid, self._trusted_root)
@@ -336,6 +340,10 @@ class SnapshotReader:
         return snapshot
 
     def current(self) -> SnapshotState:
+        with self._lock:
+            return self._current_locked()
+
+    def _current_locked(self) -> SnapshotState:
         at = self._now()
         if at - self._checked_at >= self._recheck_ms or at < self._checked_at or self._last is None:
             self._checked_at = at

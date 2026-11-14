@@ -255,6 +255,40 @@ class SnapshotReaderTests(unittest.TestCase):
                     else:
                         self.assertEqual(state.reason, "malformed", name)
 
+    def test_an_older_reload_never_lands_after_a_newer_one(self):
+        """Threads: A's reload (a good snapshot) is still running when B's later reload refuses. Afterwards
+        the reader must hold B's refusal, not A's older answer."""
+        import threading
+
+        tree = Tree(self)
+        tree.write(snapshot_at(T0, 7))
+        clock = {"A": T0, "B": T0 + 5_000, "check": T0 + 5_001}
+        inside, release = threading.Event(), threading.Event()
+
+        class SlowFirstLoad(SnapshotReader):
+            def _load(self):
+                if threading.current_thread().name == "A":
+                    inside.set()
+                    release.wait(5)
+                    return super()._load()
+                raise SnapshotError("untrusted", "refused by the newer reload")
+
+        reader = SlowFirstLoad(home_base_uid=UID, file=tree.file, trusted_root=tree.root, now=lambda: clock[threading.current_thread().name])
+        first = threading.Thread(target=reader.current, name="A")
+        second = threading.Thread(target=reader.current, name="B")
+        first.start()
+        self.assertTrue(inside.wait(5))
+        second.start()
+        second.join(0.2)
+        release.set()
+        first.join(5)
+        second.join(5)
+        checker = threading.Thread(target=lambda: results.append(reader.current()), name="check")
+        results = []
+        checker.start()
+        checker.join(5)
+        self.assertEqual(results[0].reason, "untrusted")
+
     def test_an_ignored_integer_too_long_for_int_is_still_read(self):
         """JSON.parse reads any number; Python's int() refuses more than 4300 digits by default."""
         tree = Tree(self)
