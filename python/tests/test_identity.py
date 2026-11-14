@@ -101,6 +101,16 @@ class ParityTests(unittest.TestCase):
         self.assertEqual(self.reason(changed(members=members)), "malformed")
         self.assertEqual(self.reason(changed(written_at=12345)), "malformed")
 
+    def test_patterns_match_the_whole_value(self):
+        """Python's $ also matches before a final newline; JavaScript's doesn't, and base64 decoding would
+        then drop the newline and accept the key."""
+        keys = copy.deepcopy(BASE["keys"])
+        keys[0]["public_key"] += "\n"
+        self.assertEqual(self.reason(changed(keys=keys)), "malformed")
+        self.assertEqual(self.reason(changed(written_at="2026-10-28T19:00:00.000Z\n")), "malformed")
+        with self.assertRaises(ValueError):
+            normalize_origin("https://example.ts.net\n")
+
     def test_written_at_is_rfc_3339_with_a_zone(self):
         self.assertEqual(parse_timestamp_ms("2026-10-28T19:00:00.000Z"), 1793214000000)
         self.assertEqual(parse_timestamp_ms("2026-10-28T21:00:00+02:00"), 1793214000000)

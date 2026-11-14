@@ -86,7 +86,7 @@ class Snapshot:
 
 
 def parse_timestamp_ms(text: str) -> int | None:
-    match = _TIMESTAMP.match(text)
+    match = _TIMESTAMP.fullmatch(text)
     if not match:
         return None
     year, month, day, hour, minute = (int(match.group(i)) for i in range(1, 6))
@@ -112,7 +112,7 @@ def _import_key(entry: Any, index: int) -> tuple[str, Ed25519PublicKey]:
         _fail("malformed", f"keys[{index}].kid is missing")
     text = entry.get("public_key")
     raw = None
-    if _is_text(text) and _BASE64URL.match(text):
+    if _is_text(text) and _BASE64URL.fullmatch(text):
         try:
             raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
         except (binascii.Error, ValueError):

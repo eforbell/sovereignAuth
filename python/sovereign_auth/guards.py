@@ -73,7 +73,7 @@ def normalize_origin(value: Any) -> str:
     host = (parts.hostname or "").lower()
     if ":" in host:
         host = f"[{host}]"
-    if not host or not _HOST.match(host):
+    if not host or not _HOST.fullmatch(host):
         raise ValueError(f"not an origin: {value}")
     if port is not None and port != DEFAULT_PORTS[scheme]:
         return f"{scheme}://{host}:{port}"
