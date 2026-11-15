@@ -39,7 +39,7 @@ class ModeTests(unittest.TestCase):
     def test_the_mode_is_local_or_tailnet_and_nothing_else_starts(self):
         self.assertEqual(auth_mode("local"), "local")
         self.assertEqual(auth_mode(" tailnet\n"), "tailnet")
-        self.assertEqual(auth_mode("﻿tailnet"), "tailnet", "JavaScript's trim() strips a BOM")
+        self.assertEqual(auth_mode("\ufefftailnet"), "tailnet", "JavaScript's trim() strips a BOM")
         for bad in [None, "", "Tailnet", "both", "off", "true", "\x1ctailnet"]:
             with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "local or tailnet"):
                 auth_mode(bad)
