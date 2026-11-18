@@ -77,23 +77,26 @@ It then stores a record:
 It answers with:
 
 ```
-Set-Cookie: __Host-sv_handoff=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=300
-{"url": "https://H/_sovereign/auth/handoff/sheet#<id>", "summary": "<what this confirms, in words>"}
+Set-Cookie: __Host-sv_handoff_<tag>=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=300
+{"url": "https://H/_sovereign/auth/handoff/sheet#<id>"}
 ```
 
-The `id` travels in the URL **fragment**, so it never reaches a server log or a `Referer`. The cookie follows section 7's `__Host-` rules: an exact name, and more than one cookie fails.
+- **The `id` travels in the URL fragment**, so it never reaches a server log or a `Referer`.
+- **Each handoff has its own cookie.** `<tag>` is the first 16 characters of the `id`, so two step-ups in flight at once don't overwrite each other's correlation. (A single shared cookie would let a second `begin` replace the first's, and both would then fail.)
+- **The cookie follows section 7's `__Host-` rules:** an exact name, and more than one cookie with that name fails.
+- **The helper runs one handoff at a time per page.** Other `step_up_required` answers wait for it. For a check, the one handoff's cookie then satisfies them all.
 
 ### 3. The ceremony (sheet)
 
 1. **The app opens the sheet** on that URL. The app's own checks are under "The bridge" below.
-2. **The sheet page** is `GET /_sovereign/auth/handoff/sheet`. It changes nothing and sends `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. It reads the `id` from the fragment, shows the summary, and asks for the tap that iOS needs before a passkey prompt.
-3. **`POST handoff/options {id}`.** The service finds the record and refuses unless all of these hold:
+2. **The sheet page** is `GET /_sovereign/auth/handoff/sheet`. It changes nothing and sends `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. It reads the `id` from the fragment.
+3. **`POST handoff/options {id}`, before any tap,** as the existing helper fetches options before its tap. The service finds the record and refuses unless all of these hold:
    - the record is `pending` and still within its 5 minutes;
    - the caller's identity headers resolve to the record's `user_id`;
    - the request came in on the record's `hostname`.
 
-   It then issues a section 11 challenge, bound to the purpose, audience, action and kind, plus the handoff `id`.
-4. **`POST handoff/finish {id, assertion}`.** The service verifies the assertion exactly as `check/finish` or an action finish does, and checks the challenge's handoff `id` against the record. On success it stores the result on the record and marks it `done`:
+   It then issues a section 11 challenge, bound to the purpose, audience, action and kind, plus the handoff `id`. It answers with the challenge and a **summary** of what will be confirmed, written from the record: for example, "Unlock administration on Home Base" or "Confirm restore backup *nightly-2026-11-18* in Home Base". The sheet shows that summary, then asks for the tap that iOS needs before a passkey prompt.
+4. **`POST handoff/finish {id, assertion}`**, after the tap. The service verifies the assertion exactly as `check/finish` or an action finish does, and checks the challenge's handoff `id` against the record. On success it stores the result on the record and marks it `done`:
    - for a check, the assurance token it would have set;
    - for an action, the action token.
 
@@ -109,7 +112,7 @@ When the sheet closes, the bridge's promise resolves; if the member cancels, it 
 The service **takes the record first**, so it is used up whatever happens next. It then refuses unless all of these hold:
 - the record existed and is `done`;
 - it is still within its 5 minutes;
-- the cookie equals `correlation`;
+- the `__Host-sv_handoff_<tag>` cookie for this `id` equals `correlation`;
 - the caller's identity resolves to `user_id`;
 - the request came in on `hostname`.
 
@@ -117,7 +120,7 @@ Then it delivers the result:
 - **check:** `Set-Cookie: __Host-sv_assurance=…` (section 7), now in the web view's cookie jar;
 - **action:** `{"token": "<action token>"}`, which the helper sends in `X-Sovereign-Action-Token` as today. Single use (`jti`), redemption and the 60-second lifetime all apply unchanged.
 
-Every answer clears `__Host-sv_handoff`. The helper then retries the identical request once, as today. Refusals:
+Every answer clears that handoff's cookie. The helper then retries the identical request once, as today. Refusals:
 
 ```
 {"error": "handoff_refused", "reason": "malformed" | "unknown_handoff" | "expired" | "not_done" | "wrong_member" | "wrong_hostname" | "no_cookie" | "duplicate_cookie" | "wrong_correlation"}
@@ -156,6 +159,36 @@ window.sovereign = { version: 1, handoff(url) /* → Promise<void> */ };
 
 As in section 10, **pages on the same origin are trusted.** A page on `H` could begin a handoff and redeem it, but it could already run the in-page ceremony in a browser. Handoff gives it nothing new.
 
+### Open: which client gets the result (blocks implementation)
+
+Found in review. **Nothing in the flow above proves that the client redeeming the result is the household's real app.**
+
+A malicious app installed on the member's phone could do this:
+1. Call `handoff/begin` from its own HTTP client. A native client sets any headers it likes, and the tailnet identity is the device's, shared by every app on it.
+2. Keep the correlation cookie it receives.
+3. Open its own `ASWebAuthenticationSession` on the real sheet.
+4. If the member approves the prompt, redeem the result into its own client.
+
+Every check passes. Apple delivers a session's callback to the session that started it, which protects the real app's session from interception, but it does the same for the attacker's.
+
+**This is a regression against today.** Today a ceremony's result stays in the Safari context that ran it. An app can open a Safari view or a sheet, but it can't read the cookie set inside one. A malicious app can't run the ceremony in its own web view either, because it can't claim the tailnet domain. The handoff is exactly what makes the result transferable.
+
+**What the attack still needs:** the member has to approve a passkey prompt they didn't start, in an unexpected app. A shared, non-ephemeral session would name the calling app in iOS's "wants to use … to sign in" alert, which helps a little. Even so, an approval phished this way would hand over an administrator session (8 hours) or a hardware-backed action token.
+
+Two ways to close it:
+
+- **A. Bind the handoff to the genuine app with App Attest.**
+  - The app registers an App Attest key with Home Base for this member. Apple's attestation proves the key belongs to the household's App ID (team plus bundle ID, from Home Base's install config). Registration needs only the tailnet identity: a malicious app can't produce an attestation for that App ID.
+  - `begin` and `redeem` each carry an App Attest assertion over the handoff `id`, so a client without that key can't start a handoff or collect a result.
+  - This shares sovereignAuth's App Attest verification with the planned iPhone approval key (Home Base `planning/research/iphone-hardware-key.md`, slice 1), so the same registered key can later become that approver.
+  - The cost: App Attest works only in production-signed builds (TestFlight or App Store) unless development is allowed, which is that note's open decision 5.
+- **B. Don't transfer results.**
+  - The app opens any page that needs a passkey in a Safari view, where the ceremony and the session both stay.
+  - The bridge shrinks to "open this page in a Safari view".
+  - It's safe and small, but the member continues in a Safari view rather than the app's own view.
+
+Recommendation: **B now**, since it's what the app already does by hand, then **A** together with the iPhone approval key.
+
 ## Home Base's own pages
 
 Home Base's admin pages (unlock and enrollment) call the passkey API directly, not through `stepup.js`.
@@ -181,6 +214,7 @@ Each is one PR touching few files.
 
 ## Questions for the operator
 
+0. **Client binding:** A (App Attest) or B (Safari view only). See "Open: which client gets the result".
 1. **The ephemeral sheet** (no "wants to use … to sign in" alert), if spike 1 passes. Recommended.
 2. **Scope:** checks and every-time actions now; enrollment from the app later. Recommended.
 3. **Where the scheme lives:** one Home Base setting per household, matched by the app's operator config. Recommended.
