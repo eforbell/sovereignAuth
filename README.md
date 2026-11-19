@@ -171,7 +171,7 @@ const key = verifyAttestation({ attestation, keyId, clientData, appId: 'TEAMID12
 const { counter } = verifyAssertion({ assertion, clientData, appId, publicKey: key.publicKey, counter: key.counter });
 ```
 
-The attestation must chain to Apple's App Attestation root, and its receipt to Apple Root CA G3, signed by a certificate with Apple's receipt-signing marker. Both roots are pinned in `src/appattest-roots.json`. Only `production` is accepted unless `environments` includes `development`. The receipt must name the same app, key and client data, and be created after `issuedAt`. Store the new `counter` atomically: a counter that doesn't rise is a replay. Every refusal is an `AppAttestError` with a `code`.
+The attestation must chain to Apple's App Attestation root, and its receipt to Apple Root CA G3, signed by a certificate with Apple's receipt-signing marker. Both roots are pinned in `src/appattest-roots.json`. Only `production` is accepted unless `environments` includes `development`. The receipt must name the same app, key and client data, and be created after `issuedAt` and within the last five minutes. Store the new `counter` atomically: a counter that doesn't rise is a replay. Every refusal is an `AppAttestError` with a `code`.
 
 ## Python
 

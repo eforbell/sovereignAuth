@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { APP_ATTEST_ROOTS, AppAttestError, verifyAssertion, verifyAttestation } = require('..');
-const { createFakeApple } = require('./support/appattest');
+const { createFakeApple, tlv } = require('./support/appattest');
 
 const APP_ID = 'ABCDE12345.org.example.homebase';
 const CLIENT_DATA = 'sovereign-app-instance/1\nhousehold\nu-parent\nchallenge';
@@ -20,7 +20,8 @@ const verify = (made, options = {}) => verifyAttestation({
   attestation: made.attestation, keyId: made.keyId, clientData: CLIENT_DATA, appId: APP_ID,
   issuedAt: issuedAt(), roots: apple.roots, ...options,
 });
-const refuses = (fn, code) => assert.throws(fn, (error) => error instanceof AppAttestError && error.code === code);
+// A refusal with this code, and when given, a message matching it: several checks share a code.
+const refuses = (fn, code, message = /./) => assert.throws(fn, (error) => error instanceof AppAttestError && error.code === code && message.test(error.message));
 
 test('a genuine attestation gives the key to store', async () => {
   const made = await apple.attest({ clientData: CLIENT_DATA });
@@ -36,6 +37,20 @@ test('a genuine attestation gives the key to store', async () => {
 
 test("Apple's receipt encoding (indefinite lengths, payload in pieces) reads the same", async () => {
   assert.equal(verify(await apple.attest({ clientData: CLIENT_DATA, wrong: { form: 'ber' } })).counter, 0);
+});
+
+test('a receipt must be made after the challenge and in the last five minutes', async () => {
+  const now = new Date();
+  const at = (seconds) => new Date(now.getTime() - seconds * 1000);
+  const old = await apple.attest({ clientData: CLIENT_DATA, created: at(330) });
+  refuses(() => verify(old, { issuedAt: at(290), now }), 'receipt_time'); // within the skew of the challenge, but too old
+  const fresh = await apple.attest({ clientData: CLIENT_DATA, created: at(240) });
+  assert.equal(verify(fresh, { issuedAt: at(270), now }).counter, 0);
+  refuses(() => verify(fresh, { issuedAt: at(170), now }), 'receipt_time'); // made before the challenge
+});
+
+test('the receipt chain stops at the pinned root, past an expired cross-certificate', async () => {
+  assert.equal(verify(await apple.attest({ clientData: CLIENT_DATA, wrong: { crossCertificate: true } })).counter, 0);
 });
 
 test('the attestation is refused when', async (t) => {
@@ -58,11 +73,28 @@ test('the attestation is refused when', async (t) => {
     ['the receipt is for other client data', { receiptClient: true }, 'receipt_client'],
     ['the receipt was made before the challenge', { receiptCreated: new Date(Date.now() - 10 * MINUTE) }, 'receipt_time'],
     ['the receipt was made in the future', { receiptCreated: new Date(Date.now() + 10 * MINUTE) }, 'receipt_time'],
+    ['the key is not P-256', { curve: 'P-384' }, 'key', /P-256/],
+    ['the nonce extension has more in it', { nonceShape: true }, 'nonce', /shape/],
+    ['the receipt is not SignedData', { outerOid: tlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x03])) }, 'receipt', /not SignedData/],
+    ['the receipt content is not data', { contentOid: '1.2.840.113549.1.7.3' }, 'receipt', /not data/],
+    ['the receipt has two signers', { twoSigners: true }, 'receipt', /one signer/],
+    ['the receipt digest is not SHA-256', { digestOid: '2.16.840.1.101.3.4.2.2' }, 'receipt', /ECDSA and SHA-256/],
+    ['the receipt signature is not ECDSA with SHA-256', { signatureOid: '1.2.840.10045.4.3.3' }, 'receipt', /ECDSA and SHA-256/],
+    ['the receipt repeats a field', { duplicateField: true }, 'receipt', /repeats/],
+    ['the receipt creation time is unreadable', { receiptDate: 'yesterday-ish' }, 'receipt', /unreadable/],
+    ['the receipt has bytes after it', { receiptTrailing: true }, 'malformed', /bytes after/],
+    ['the receipt signer is not a SEQUENCE', { signerNotSequence: true }, 'malformed', /receipt signer is missing/],
+    ['the receipt leaves out its signer', { dropSigner: true }, 'receipt', /signer certificate is missing/],
+    ['a receipt field type is negative', { negativeFieldType: true }, 'malformed', /integer out of range/],
+    ['the credential certificate repeats the nonce', { repeatNonce: true }, 'malformed', /repeats extension/],
+    ['an OID in the receipt overflows', { outerOid: tlv(0x06, Buffer.from([0x2a, ...Array(9).fill(0xff), 0x7f])) }, 'malformed', /out of range/],
+    ['an OID in the receipt is cut short', { outerOid: tlv(0x06, Buffer.from([0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02, 0x81])) }, 'malformed', /cut short/],
+    ['an OID in the receipt is not minimal', { outerOid: tlv(0x06, Buffer.from([0x2a, 0x80, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02])) }, 'malformed', /not minimal/],
   ];
-  for (const [name, wrong, code] of cases) {
+  for (const [name, wrong, code, message] of cases) {
     await t.test(name, async () => {
       const made = await apple.attest({ clientData: CLIENT_DATA, wrong });
-      refuses(() => verify(made), code);
+      refuses(() => verify(made), code, message);
     });
   }
 });
@@ -86,17 +118,21 @@ test('the attestation is refused for other inputs', async (t) => {
 test('a malformed receipt is refused, and parsing always ends', async (t) => {
   const nested = Buffer.concat([...Array(40).fill(Buffer.from([0x30, 0x80])), ...Array(40).fill(Buffer.from([0, 0]))]);
   const cases = [
-    ['a long length cut short inside an indefinite one', Buffer.from([0x30, 0x80, 0x30, 0x84, 0xff])],
-    ['an indefinite length with no end', Buffer.from([0x30, 0x80, 0x05, 0x00])],
-    ['a length past the end', Buffer.from([0x30, 0x05, 0x02, 0x01])],
-    ['an indefinite primitive', Buffer.from([0x04, 0x80, 0x00, 0x00])],
-    ['nesting too deep', nested],
-    ['a single byte', Buffer.from([0x30])],
+    ['a long length cut short inside an indefinite one', Buffer.from([0x30, 0x80, 0x30, 0x84, 0xff]), /length is out of range/],
+    ['an indefinite length with no end', Buffer.from([0x30, 0x80, 0x05, 0x00]), /never ends/],
+    ['a length past the end', Buffer.from([0x30, 0x05, 0x02, 0x01]), /runs past the end/],
+    ['an element past its parent', Buffer.from([0x30, 0x02, 0x04, 0x05, 1, 2, 3, 4, 5]), /past its parent/],
+    ['an indefinite primitive', Buffer.from([0x04, 0x80, 0x00, 0x00]), /indefinite length on a primitive/],
+    ['end-of-contents on its own', Buffer.from([0x00, 0x00]), /end-of-contents/],
+    ['end-of-contents inside a definite length', Buffer.from([0x30, 0x02, 0x00, 0x00]), /end-of-contents/],
+    ['nesting too deep', nested, /too deeply/],
+    ['a single byte', Buffer.from([0x30]), /ends early/],
+    ['a high tag number', Buffer.from([0x3f, 0x81, 0x01, 0x00]), /high tag/],
   ];
-  for (const [name, receiptBytes] of cases) {
+  for (const [name, receiptBytes, message] of cases) {
     await t.test(name, async () => {
       const made = await apple.attest({ clientData: CLIENT_DATA, wrong: { receiptBytes } });
-      refuses(() => verify(made), 'malformed');
+      refuses(() => verify(made), 'malformed', message);
     });
   }
 });

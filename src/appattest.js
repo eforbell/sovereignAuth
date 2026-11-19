@@ -22,7 +22,8 @@ const ENVIRONMENTS = {
   appattestdevelop: 'development',
 };
 const RECEIPT = { appId: 2, certificate: 3, clientHash: 4, type: 6, created: 12 };
-const RECEIPT_SKEW_MS = 60 * 1000;
+const RECEIPT_SKEW_MS = 60 * 1000; // Apple's clock against ours
+const RECEIPT_MAX_AGE_MS = 5 * 60 * 1000; // Apple: a receipt is at most five minutes old
 const MAX_DEPTH = 16;
 
 class AppAttestError extends Error {
@@ -74,6 +75,7 @@ function element(buf, i, depth = 0) {
   if (!Number.isSafeInteger(i) || i < 0 || i + 2 > buf.length) fail('malformed', 'ASN.1 ends early');
   const start = i;
   const tag = buf[i++];
+  if (tag === 0) fail('malformed', 'ASN.1 end-of-contents outside an indefinite length');
   if ((tag & 0x1f) === 0x1f) fail('malformed', 'ASN.1 high tag numbers are not used here');
   const constructed = (tag & 0x20) !== 0;
   let length = buf[i++];
@@ -127,6 +129,13 @@ function expect(node, tag, what) {
   return node;
 }
 
+// A constructed element's children, checking its tag and how many it has.
+function parts(node, tag, what, min, max = min) {
+  if (!node || node.tag !== tag || !node.children) fail('malformed', `${what} is missing`);
+  if (node.children.length < min || node.children.length > max) fail('malformed', `${what} has ${node.children.length} parts`);
+  return node.children;
+}
+
 // An OCTET STRING's bytes, joining the pieces of a constructed one.
 function octets(buf, node) {
   if (node.tag === 0x04) return Buffer.from(content(buf, node));
@@ -134,16 +143,22 @@ function octets(buf, node) {
   return fail('malformed', 'expected an OCTET STRING');
 }
 
+// Every subidentifier is base-128, minimal and terminated; the first holds the first two arcs.
 function oid(buf, node) {
   const value = content(buf, expect(node, 0x06, 'an object identifier'));
-  if (value.length === 0) fail('malformed', 'empty object identifier');
-  const arcs = [Math.min(2, Math.floor(value[0] / 40)), value[0] - Math.min(2, Math.floor(value[0] / 40)) * 40];
-  let arc = 0;
-  for (let k = 1; k < value.length; k++) {
-    arc = arc * 128 + (value[k] & 0x7f);
-    if (!(value[k] & 0x80)) { arcs.push(arc); arc = 0; }
+  const ids = [];
+  let id = 0;
+  let open = false;
+  for (const byte of value) {
+    if (!open && byte === 0x80) fail('malformed', 'object identifier is not minimal');
+    id = id * 128 + (byte & 0x7f);
+    if (id > Number.MAX_SAFE_INTEGER) fail('malformed', 'object identifier is out of range');
+    open = (byte & 0x80) !== 0;
+    if (!open) { ids.push(id); id = 0; }
   }
-  return arcs.join('.');
+  if (open || ids.length === 0) fail('malformed', 'object identifier is cut short');
+  const first = ids[0] < 40 ? 0 : ids[0] < 80 ? 1 : 2;
+  return [first, ids[0] - first * 40, ...ids.slice(1)].join('.');
 }
 
 function integer(buf, node) {
@@ -164,6 +179,18 @@ function extensions(der) {
     out.set(id, octets(der, ext.children.at(-1)));
   }
   return out;
+}
+
+// Anything unreadable is refused as malformed, whatever part of the input it surfaced in.
+function guarded(verify) {
+  return (options) => {
+    try {
+      return verify(options);
+    } catch (error) {
+      if (error instanceof AppAttestError) throw error;
+      throw new AppAttestError('malformed', `unreadable input: ${error.message}`);
+    }
+  };
 }
 
 // --- Attestation -----------------------------------------------------------------------------------------
@@ -197,12 +224,13 @@ function uncompressedPoint(cert) {
 function certificateNonce(der) {
   const value = extensions(der).get(OID.nonce);
   if (!value) return fail('nonce', 'the credential certificate has no nonce');
-  const sequence = expect(parse(value, 'nonce extension'), 0x30, 'nonce sequence');
-  const tagged = expect(sequence.children[0], 0xa1, 'nonce [1]');
-  const nonce = octets(value, expect(tagged.children[0], 0x04, 'nonce'));
-  if (sequence.children.length !== 1 || tagged.children.length !== 1 || nonce.length !== 32) {
+  const sequence = parse(value, 'nonce extension');
+  if (sequence.tag !== 0x30 || sequence.children.length !== 1 || sequence.children[0].tag !== 0xa1
+    || sequence.children[0].children.length !== 1 || sequence.children[0].children[0].tag !== 0x04) {
     fail('nonce', 'the nonce extension has an unexpected shape');
   }
+  const nonce = octets(value, sequence.children[0].children[0]);
+  if (nonce.length !== 32) fail('nonce', 'the nonce extension has an unexpected shape');
   return nonce;
 }
 
@@ -214,8 +242,8 @@ function certificateNonce(der) {
 // - now: the time to check certificates and the receipt against.
 // - roots: { attestation, receipt } in appattest-roots.json's format; the pinned roots unless given.
 // Returns what to store: { keyId, publicKey (SPKI DER, base64), counter: 0, environment, receipt (Buffer),
-// receiptCreated (Date) }. Throws AppAttestError otherwise.
-function verifyAttestation({ attestation, keyId, clientData, appId, issuedAt, environments = ['production'], now = new Date(), roots } = {}) {
+// receiptCreated (Date) }. Throws AppAttestError otherwise (verifyAttestation, below, is this guarded).
+function attestationChecks({ attestation, keyId, clientData, appId, issuedAt, environments = ['production'], now = new Date(), roots } = {}) {
   if (typeof appId !== 'string' || !/^[A-Z0-9]{10}\.[A-Za-z0-9.-]+$/.test(appId)) fail('malformed', 'appId must be <TEAMID>.<bundle id>');
   if (!(issuedAt instanceof Date) || Number.isNaN(issuedAt.getTime())) fail('malformed', 'issuedAt must be a Date');
   const id = bytes(keyId, 'keyId');
@@ -272,40 +300,45 @@ function verifyAttestation({ attestation, keyId, clientData, appId, issuedAt, en
 // version INTEGER, value OCTET STRING }. Apple signs it without signed attributes, so the signature covers
 // the content itself; a receipt with signed attributes is refused rather than half-checked.
 function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }) {
-  const info = expect(parse(buf, 'receipt'), 0x30, 'receipt ContentInfo');
-  if (oid(buf, info.children[0]) !== OID.signedData) fail('receipt', 'the receipt is not SignedData');
-  const signed = expect(expect(info.children[1], 0xa0, 'receipt content').children[0], 0x30, 'SignedData');
-  const parts = signed.children;
-  const encapsulated = expect(parts[2], 0x30, 'receipt encapsulated content');
-  if (oid(buf, encapsulated.children[0]) !== OID.data) fail('receipt', 'the receipt content is not data');
-  const payload = octets(buf, expect(encapsulated.children[1], 0xa0, 'receipt payload').children[0]);
-  const certificates = expect(parts[3], 0xa0, 'receipt certificates').children.map((child) => Buffer.from(raw(buf, child)));
-  const signers = expect(parts.at(-1), 0x31, 'receipt signers').children;
+  const [contentType, wrapped] = parts(parse(buf, 'receipt'), 0x30, 'receipt ContentInfo', 2);
+  if (oid(buf, contentType) !== OID.signedData) fail('receipt', 'the receipt is not SignedData');
+  // SignedData: version, digestAlgorithms, encapContentInfo, [0] certificates, signerInfos.
+  const [, , encapsulated, bag, signerInfos] = parts(parts(wrapped, 0xa0, 'receipt content', 1)[0], 0x30, 'SignedData', 5);
+  const [encapsulatedType, encapsulatedContent] = parts(encapsulated, 0x30, 'receipt encapsulated content', 2);
+  if (oid(buf, encapsulatedType) !== OID.data) fail('receipt', 'the receipt content is not data');
+  const payload = octets(buf, parts(encapsulatedContent, 0xa0, 'receipt payload', 1)[0]);
+  const certificates = parts(bag, 0xa0, 'receipt certificates', 1, 8).map((child) => Buffer.from(raw(buf, child)));
+  const signers = parts(signerInfos, 0x31, 'receipt signers', 0, 8);
   if (signers.length !== 1) fail('receipt', 'the receipt must have one signer');
 
-  // SignerInfo: version, sid (issuerAndSerialNumber), digestAlgorithm, signatureAlgorithm, signature.
-  const signer = signers[0].children;
-  if (signer.length !== 5 || signer.some((child) => child.tag === 0xa0 || child.tag === 0xa1)) {
-    fail('receipt', 'the receipt signer has attributes');
-  }
-  if (oid(buf, signer[2].children[0]) !== OID.sha256 || oid(buf, signer[3].children[0]) !== OID.ecdsaSha256) {
+  // SignerInfo: version, sid (issuerAndSerialNumber), digestAlgorithm, signatureAlgorithm, signature. Five
+  // parts and no more: signed or unsigned attributes would make six or seven.
+  const signer = parts(signers[0], 0x30, 'receipt signer', 1, 7);
+  if (signer.length !== 5) fail('receipt', 'the receipt signer has attributes');
+  const [, sid, digestAlgorithm, signatureAlgorithm, signatureNode] = signer;
+  if (oid(buf, parts(digestAlgorithm, 0x30, 'receipt digest algorithm', 1, 2)[0]) !== OID.sha256
+    || oid(buf, parts(signatureAlgorithm, 0x30, 'receipt signature algorithm', 1, 2)[0]) !== OID.ecdsaSha256) {
     fail('receipt', 'the receipt is not signed with ECDSA and SHA-256');
   }
-  const sid = expect(signer[1], 0x30, 'receipt signer identifier');
-  const issuer = raw(buf, sid.children[0]);
-  const serial = content(buf, expect(sid.children[1], 0x02, 'receipt signer serial'));
+  const [issuerNode, serialNode] = parts(sid, 0x30, 'receipt signer identifier', 2);
+  const issuer = raw(buf, expect(issuerNode, 0x30, 'receipt signer issuer'));
+  const serial = content(buf, expect(serialNode, 0x02, 'receipt signer serial'));
   const signerDer = certificates.find((der) => {
-    const tbs = parse(der, 'certificate').children[0];
-    const fields = tbs.children[0].tag === 0xa0 ? tbs.children.slice(1) : tbs.children;
-    return content(der, fields[0]).equals(serial) && raw(der, fields[2]).equals(issuer);
+    const tbs = parts(parse(der, 'certificate'), 0x30, 'certificate', 3)[0];
+    const fields = parts(tbs, 0x30, 'tbsCertificate', 6, 10);
+    const [serialField, , issuerField] = fields[0].tag === 0xa0 ? fields.slice(1) : fields;
+    return content(der, serialField).equals(serial) && raw(der, issuerField).equals(issuer);
   });
   if (!signerDer) fail('receipt', 'the receipt signer certificate is missing');
 
   // The signer chains to the pinned receipt root and carries Apple's receipt-signing marker, which no
   // other certificate under that root (a developer's, say) does.
+  const anchored = (cert) => roots.some((root) => cert.fingerprint256 === root.fingerprint
+    || (cert.checkIssued(root.cert) && cert.verify(root.cert.publicKey)));
   const chain = [signerDer];
   while (chain.length < 4) {
     const last = new crypto.X509Certificate(chain.at(-1));
+    if (anchored(last)) break;
     const next = certificates.find((der) => !chain.some((c) => c.equals(der))
       && last.checkIssued(new crypto.X509Certificate(der)) && last.verify(new crypto.X509Certificate(der).publicKey));
     if (!next) break;
@@ -313,15 +346,16 @@ function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }
   }
   if (!attestationRoot(chain, roots, now)) fail('receipt_chain', 'the receipt does not chain to the receipt root');
   if (!extensions(signerDer).has(OID.receiptSigner)) fail('receipt_signer', 'the receipt signer is not a receipt-signing certificate');
-  const signature = octets(buf, expect(signer[4], 0x04, 'receipt signature'));
+  const signature = octets(buf, expect(signatureNode, 0x04, 'receipt signature'));
   if (!crypto.verify('sha256', payload, new crypto.X509Certificate(signerDer).publicKey, signature)) {
     fail('receipt_signature', 'the receipt signature does not verify');
   }
 
   const fields = new Map();
   for (const entry of expect(parse(payload, 'receipt payload'), 0x31, 'receipt fields').children) {
-    const [type, , value] = expect(entry, 0x30, 'receipt field').children;
+    const [type, version, value] = parts(entry, 0x30, 'receipt field', 3);
     const key = integer(payload, type);
+    integer(payload, version);
     if (fields.has(key)) fail('receipt', `the receipt repeats field ${key}`);
     fields.set(key, octets(payload, value));
   }
@@ -332,8 +366,9 @@ function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }
   if (!field(RECEIPT.clientHash).equals(hash)) fail('receipt_client', 'the receipt is for different client data');
   const created = new Date(field(RECEIPT.created).toString('utf8'));
   if (Number.isNaN(created.getTime())) fail('receipt', 'the receipt creation time is unreadable');
-  if (created.getTime() < issuedAt.getTime() - RECEIPT_SKEW_MS || created.getTime() > now.getTime() + RECEIPT_SKEW_MS) {
-    fail('receipt_time', 'the receipt was not created after the challenge');
+  const at = created.getTime();
+  if (at < issuedAt.getTime() - RECEIPT_SKEW_MS || at < now.getTime() - RECEIPT_MAX_AGE_MS || at > now.getTime() + RECEIPT_SKEW_MS) {
+    fail('receipt_time', 'the receipt was not created after the challenge, in the last five minutes');
   }
   return { created };
 }
@@ -343,8 +378,8 @@ function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }
 // Verifies an assertion from DCAppAttestService.generateAssertion(keyId, SHA-256(clientData)) against a
 // stored key: publicKey (as verifyAttestation returned it) and counter (the last one accepted). Returns
 // { counter }, the new value to store. The caller stores it atomically: a counter that doesn't rise is a
-// replay. Throws AppAttestError otherwise.
-function verifyAssertion({ assertion, clientData, appId, publicKey, counter } = {}) {
+// replay. Throws AppAttestError otherwise (verifyAssertion, below, is this guarded).
+function assertionChecks({ assertion, clientData, appId, publicKey, counter } = {}) {
   if (typeof appId !== 'string' || appId.length === 0) fail('malformed', 'appId is required');
   if (!Number.isSafeInteger(counter) || counter < 0) fail('malformed', 'counter must be a non-negative integer');
   let key;
@@ -367,6 +402,8 @@ function verifyAssertion({ assertion, clientData, appId, publicKey, counter } = 
   return { counter: parsed.counter };
 }
 
+const verifyAttestation = guarded(attestationChecks);
+const verifyAssertion = guarded(assertionChecks);
 const PINNED_ROOTS = { attestation: loadRoots(PINNED.attestation), receipt: loadRoots(PINNED.receipt) };
 
 module.exports = { APP_ATTEST_ROOTS: PINNED, AppAttestError, verifyAssertion, verifyAttestation };

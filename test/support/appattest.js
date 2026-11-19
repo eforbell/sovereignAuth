@@ -99,27 +99,31 @@ async function certificate({ name, issuer = null, ca = true, keys = null, extens
 
 // A receipt as Apple makes one: CMS SignedData over a SET of { type, version, value } fields, signed with no
 // signed attributes. form 'ber' copies Apple's encoding: indefinite lengths and a payload split into pieces.
-function receipt({ fields, signer, chain, form = 'der', signedAttributes = false, badSignature = false }) {
-  const payload = tlv(0x31, ...Object.entries(fields)
-    .filter(([, value]) => value !== undefined)
-    .map(([type, value]) => tlv(0x30, int(Number(type)), int(1), tlv(0x04, value))));
+function receipt({ fields, signer, chain, form = 'der', signedAttributes = false, badSignature = false, wrong = {} }) {
+  const entries = Object.entries(fields).filter(([, value]) => value !== undefined);
+  if (wrong.duplicateField) entries.push(['2', fields[2]]);
+  const fieldType = (type) => (wrong.negativeFieldType && type === '6' ? tlv(0x02, Buffer.from([0x86])) : int(Number(type)));
+  const payload = tlv(0x31, ...entries.map(([type, value]) => tlv(0x30, fieldType(type), int(1), tlv(0x04, value))));
   let signature = crypto.sign('sha256', payload, signer.key);
   if (badSignature) signature = crypto.sign('sha256', Buffer.concat([payload, Buffer.from([0])]), signer.key);
   const algorithm = (id) => tlv(0x30, oid(id), Buffer.from([0x05, 0x00]));
   const attributes = signedAttributes ? [tlv(0xa0, tlv(0x30, oid(OID.contentType), tlv(0x31, oid(OID.data))))] : [];
-  const signerInfo = tlv(0x30, int(1), issuerAndSerial(signer.der), algorithm(OID.sha256), ...attributes, tlv(0x30, oid(OID.ecdsaSha256)), tlv(0x04, signature));
-  const certificates = chain.map((c) => c.der);
+  const one = tlv(0x30, int(1), issuerAndSerial(signer.der), algorithm(wrong.digestOid || OID.sha256), ...attributes, tlv(0x30, oid(wrong.signatureOid || OID.ecdsaSha256)), tlv(0x04, signature));
+  const signerInfo = wrong.twoSigners ? Buffer.concat([one, one]) : wrong.signerNotSequence ? tlv(0x04, one) : one;
+  const signedDataOid = wrong.outerOid || oid(OID.signedData);
+  const dataOid = oid(wrong.contentOid || OID.data);
+  const certificates = (wrong.dropSigner ? chain.slice(1) : chain).map((c) => c.der);
   if (form === 'ber') {
     const pieces = [payload.subarray(0, 40), payload.subarray(40)].map((piece) => tlv(0x04, piece));
-    return open(0x30, oid(OID.signedData), open(0xa0, open(0x30,
+    return open(0x30, signedDataOid, open(0xa0, open(0x30,
       int(1), tlv(0x31, algorithm(OID.sha256)),
-      open(0x30, oid(OID.data), open(0xa0, open(0x24, ...pieces))),
+      open(0x30, dataOid, open(0xa0, open(0x24, ...pieces))),
       open(0xa0, ...certificates),
       tlv(0x31, signerInfo))));
   }
-  return tlv(0x30, oid(OID.signedData), tlv(0xa0, tlv(0x30,
+  return tlv(0x30, signedDataOid, tlv(0xa0, tlv(0x30,
     int(1), tlv(0x31, algorithm(OID.sha256)),
-    tlv(0x30, oid(OID.data), tlv(0xa0, tlv(0x04, payload))),
+    tlv(0x30, dataOid, tlv(0xa0, tlv(0x04, payload))),
     tlv(0xa0, ...certificates),
     tlv(0x31, signerInfo))));
 }
@@ -138,7 +142,7 @@ async function createFakeApple({ appId }) {
 
   // A device key attested for clientData. `wrong` names the part to get wrong.
   async function attest({ clientData, environment = 'production', created = new Date(), wrong = {} }) {
-    const keys = await crypto.webcrypto.subtle.generateKey(ECDSA, true, ['sign', 'verify']);
+    const keys = await crypto.webcrypto.subtle.generateKey(wrong.curve ? { ...ECDSA, namedCurve: wrong.curve } : ECDSA, true, ['sign', 'verify']);
     const jwk = await crypto.webcrypto.subtle.exportKey('jwk', keys.publicKey);
     const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
     const keyId = wrong.keyId ? crypto.randomBytes(32) : sha256(point); // wrong.keyId: credential ID and keyId agree, but not with the key
@@ -151,9 +155,16 @@ async function createFakeApple({ appId }) {
     const hash = sha256(clientData);
     const nonce = sha256(authData, wrong.nonce ? sha256('other client data') : hash);
     const issuer = wrong.chain ? otherIntermediate : intermediate;
-    const leaf = await certificate({ name: 'Fake credential', issuer, ca: false, keys, extensions: [[OID.nonce, tlv(0x30, tlv(0xa1, tlv(0x04, nonce)))]] });
+    const nonceExtension = wrong.nonceShape ? tlv(0x30, tlv(0xa1, tlv(0x04, nonce)), Buffer.from([0x05, 0x00])) : tlv(0x30, tlv(0xa1, tlv(0x04, nonce)));
+    const nonces = wrong.repeatNonce ? [[OID.nonce, nonceExtension], [OID.nonce, tlv(0x30, tlv(0xa1, tlv(0x04, crypto.randomBytes(32))))]] : [[OID.nonce, nonceExtension]];
+    const leaf = await certificate({ name: 'Fake credential', issuer, ca: false, keys, extensions: nonces });
     let signer = wrong.receiptSigner ? developerSigner : receiptSigner;
     let chain = [signer, receiptIntermediate, receiptRoot];
+    if (wrong.crossCertificate) {
+      // The root's own name and key, cross-signed by another root and expired: a path to ignore, not to follow.
+      const cross = await certificate({ name: 'Fake Root CA - G3', issuer: otherRoot, keys: receiptRoot.keys, from: -10 * DAY, to: -DAY });
+      chain = [signer, receiptIntermediate, cross, receiptRoot, otherRoot];
+    }
     if (wrong.receiptRoot) {
       signer = await certificate({ name: 'Self-made signer', issuer: otherRoot, ca: false, extensions: [[OID.receiptSigner, Buffer.from([0x05, 0x00])]] });
       chain = [signer, otherRoot];
@@ -164,7 +175,7 @@ async function createFakeApple({ appId }) {
       4: wrong.receiptClient ? sha256('other client data') : hash,
       5: crypto.randomBytes(16),
       6: Buffer.from(wrong.receiptType || 'ATTEST'),
-      12: Buffer.from((wrong.receiptCreated || created).toISOString()),
+      12: Buffer.from(wrong.receiptDate || (wrong.receiptCreated || created).toISOString()),
       21: Buffer.from(new Date(created.getTime() + 90 * DAY).toISOString()),
     };
     const receiptDer = receipt({
@@ -174,10 +185,11 @@ async function createFakeApple({ appId }) {
       form: wrong.form || 'der',
       signedAttributes: Boolean(wrong.signedAttributes),
       badSignature: Boolean(wrong.receiptSignature),
+      wrong,
     });
     const object = isoCBOR.encode(new Map([
       ['fmt', wrong.fmt || 'apple-appattest'],
-      ['attStmt', new Map([['x5c', [leaf.der, issuer.der]], ['receipt', wrong.receiptBytes || receiptDer]])],
+      ['attStmt', new Map([['x5c', [leaf.der, issuer.der]], ['receipt', wrong.receiptBytes || (wrong.receiptTrailing ? Buffer.concat([receiptDer, Buffer.from([0])]) : receiptDer)]])],
       ['authData', authData],
     ]));
     return {
@@ -202,4 +214,4 @@ async function createFakeApple({ appId }) {
   };
 }
 
-module.exports = { createFakeApple };
+module.exports = { createFakeApple, tlv };
