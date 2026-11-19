@@ -156,6 +156,23 @@ Assertion-handle mismatches refuse as `wrong_member`. A legacy descriptor's expl
 
 `kind` is `synced`, `device-bound` or `hardware`, from what the authenticator proves (D15). Store every `update` a verified assertion returns, refused or not, through `mergeCredentialUpdate`: the kind only falls, the counter only rises and the flags only widen, so two finishes racing for one credential end the same in either order. That holds only if each read, merge and write runs alone for that credential: lock the read until the write (SQLite's `BEGIN IMMEDIATE`, or `SELECT … FOR UPDATE`), or compare-and-swap and retry. A plain transaction at read-committed isolation is not enough. `webauthn.currentKind(credential)` gives a stored credential's kind under the roots loaded now, which is what a snapshot should publish. The default challenge store is in memory; any store with `put(record)` and a `take(challenge)` that returns a record at most once will do.
 
+## App Attest
+
+For a household's iPhone app (`docs/native-handoff.md`, part 1): proof that a key lives in the Secure Enclave of a genuine copy of the app. Node only, and it never calls Apple.
+
+```js
+const { verifyAttestation, verifyAssertion, AppAttestError } = require('sovereign-auth');
+
+// Registering: the app attested keyId over clientData, which carries a challenge issued at issuedAt.
+const key = verifyAttestation({ attestation, keyId, clientData, appId: 'TEAMID1234.org.example.homebase', issuedAt });
+// → { keyId, publicKey, counter: 0, environment: 'production', receipt, receiptCreated }: store all of it.
+
+// Later: an assertion over new clientData, against the stored key.
+const { counter } = verifyAssertion({ assertion, clientData, appId, publicKey: key.publicKey, counter: key.counter });
+```
+
+The attestation must chain to Apple's App Attestation root, and its receipt to Apple Root CA G3, signed by a certificate with Apple's receipt-signing marker. Both roots are pinned in `src/appattest-roots.json`. Only `production` is accepted unless `environments` includes `development`. The receipt must name the same app, key and client data, and be created after `issuedAt`. Store the new `counter` atomically: a counter that doesn't rise is a replay. Every refusal is an `AppAttestError` with a `code`.
+
 ## Python
 
 `python/` holds the port for Python apps (D13), installed from the same pinned commit:
@@ -174,6 +191,8 @@ Where JavaScript and Python disagree (`true == 1`, JSON `NaN`, what `trim()` str
 npm test
 cd python && python -m unittest discover -s tests   # with cryptography installed
 ```
+
+App Attest's tests use a fake Apple, because real device output names the household's App ID. To check real output from a local file, set `SOVEREIGN_APPATTEST_FIXTURE` (the Home Base app's `appattest-fixtures.json`) and `SOVEREIGN_APPATTEST_APP_ID`.
 
 `vectors/` holds language-neutral JSON cases. Every implementation, the Python port included, must pass them unchanged.
 
