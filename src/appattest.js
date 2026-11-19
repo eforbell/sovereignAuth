@@ -71,7 +71,7 @@ function cborMap(buffer, name) {
 // indefinite lengths and split their payload across a constructed OCTET STRING, so both are read.
 function element(buf, i, depth = 0) {
   if (depth > MAX_DEPTH) fail('malformed', 'ASN.1 nests too deeply');
-  if (i + 2 > buf.length) fail('malformed', 'ASN.1 ends early');
+  if (!Number.isSafeInteger(i) || i < 0 || i + 2 > buf.length) fail('malformed', 'ASN.1 ends early');
   const start = i;
   const tag = buf[i++];
   if ((tag & 0x1f) === 0x1f) fail('malformed', 'ASN.1 high tag numbers are not used here');
@@ -80,8 +80,9 @@ function element(buf, i, depth = 0) {
   if (length === 0x80) {
     if (!constructed) fail('malformed', 'ASN.1 indefinite length on a primitive');
     const children = [];
-    while (!(buf[i] === 0 && buf[i + 1] === 0)) {
+    for (;;) {
       if (i + 2 > buf.length) fail('malformed', 'ASN.1 indefinite length never ends');
+      if (buf[i] === 0 && buf[i + 1] === 0) break;
       const child = element(buf, i, depth + 1);
       children.push(child);
       i = child.end;
@@ -90,7 +91,7 @@ function element(buf, i, depth = 0) {
   }
   if (length & 0x80) {
     const count = length & 0x7f;
-    if (count === 0 || count > 4) fail('malformed', 'ASN.1 length is out of range');
+    if (count === 0 || count > 4 || i + count > buf.length) fail('malformed', 'ASN.1 length is out of range');
     length = 0;
     for (let k = 0; k < count; k++) length = length * 256 + buf[i++];
   }

@@ -177,7 +177,7 @@ async function createFakeApple({ appId }) {
     });
     const object = isoCBOR.encode(new Map([
       ['fmt', wrong.fmt || 'apple-appattest'],
-      ['attStmt', new Map([['x5c', [leaf.der, issuer.der]], ['receipt', receiptDer]])],
+      ['attStmt', new Map([['x5c', [leaf.der, issuer.der]], ['receipt', wrong.receiptBytes || receiptDer]])],
       ['authData', authData],
     ]));
     return {

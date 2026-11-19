@@ -83,6 +83,24 @@ test('the attestation is refused for other inputs', async (t) => {
   });
 });
 
+test('a malformed receipt is refused, and parsing always ends', async (t) => {
+  const nested = Buffer.concat([...Array(40).fill(Buffer.from([0x30, 0x80])), ...Array(40).fill(Buffer.from([0, 0]))]);
+  const cases = [
+    ['a long length cut short inside an indefinite one', Buffer.from([0x30, 0x80, 0x30, 0x84, 0xff])],
+    ['an indefinite length with no end', Buffer.from([0x30, 0x80, 0x05, 0x00])],
+    ['a length past the end', Buffer.from([0x30, 0x05, 0x02, 0x01])],
+    ['an indefinite primitive', Buffer.from([0x04, 0x80, 0x00, 0x00])],
+    ['nesting too deep', nested],
+    ['a single byte', Buffer.from([0x30])],
+  ];
+  for (const [name, receiptBytes] of cases) {
+    await t.test(name, async () => {
+      const made = await apple.attest({ clientData: CLIENT_DATA, wrong: { receiptBytes } });
+      refuses(() => verify(made), 'malformed');
+    });
+  }
+});
+
 test('development is refused unless the household turns it on', async () => {
   const made = await apple.attest({ clientData: CLIENT_DATA, environment: 'development' });
   refuses(() => verify(made), 'environment');
