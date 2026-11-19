@@ -58,12 +58,34 @@ The app does this once, on first use, over the tailnet:
    - `rpIdHash` equals `SHA-256(appId)`;
    - the counter is 0;
    - the AAGUID is the **production** environment. Development is refused unless the household turns it on; this is the iPhone hardware-key note's open decision 5. TestFlight and App Store builds are production.
-   - the credential ID equals `keyId`, which equals `SHA-256` of the public key.
-4. **Home Base stores** `{keyId, publicKey, counter: 0, user_id, created, label}`. The label is a device name the app sends, shown to people only. It audits the registration.
+   - the credential ID equals `keyId`, which equals `SHA-256` of the credential certificate's public key, as an X9.62 uncompressed point, compared as decoded bytes.
+   - **the receipt** in the attestation verifies as Apple's guide requires:
+     - its signature and chain reach Apple's receipt root, which is a separate pin from the attestation root;
+     - its App ID equals `appId`;
+     - its attested public key equals the credential's;
+     - its creation time is within the challenge's 5 minutes.
+4. **Home Base stores** `{keyId, publicKey, counter: 0, receipt, user_id, created, label}`. The label is a device name the app sends, shown to people only. It audits the registration.
+
+Apple also offers an online fraud-metric refresh that exchanges the stored receipt with Apple's server. **Home Base doesn't use it.** It would be the only call from Home Base to Apple, and it adds no check this flow relies on.
 
 Registering needs only the tailnet identity:
 - A malicious app can't produce an attestation for the household's App ID.
-- A genuine copy of the app on another person's phone can't present this member's tailnet identity.
+- A genuine copy of the app elsewhere gains nothing by registering. Even if its traffic were relayed through the member's phone so that it registered as that member, using the registration would still take that member's passkey, in a sheet on the relaying phone (see "Why this is safe").
+
+### Household trust (pinned certificate authorities)
+
+The app attests a handoff `id` only when that `id` came from a real household page. That holds only if nobody can show the app a fake one. The phone's own trust store isn't enough for that:
+- A person can install and trust their own root certificate, for example to intercept their own phone's traffic.
+- With such a root, a genuine copy of the app could be served a forged page on `H` that hands its bridge another client's `id`.
+
+So for **household hosts only**, the app trusts a pinned set of certificate authorities and nothing else:
+
+- **The pin set:** `trustAnchors`, in the app's operator config. It defaults to the authorities that issue Tailscale's HTTPS certificates: Let's Encrypt's ISRG Root X1 and ISRG Root X2, pinned by the SHA-256 of their public keys.
+- **Native requests** (`/api/home`, `app/*`, `handoff/attest`) evaluate the server's chain against those anchors only. User-installed and other system roots don't count.
+- **The web view** applies the same evaluation in its server-trust challenge handler, for every load from a household host. A household page that fails it doesn't load.
+- **The bridge** exists only in a main frame whose own load passed it (spike 5).
+- **A failure** shows "Can't verify your household's certificate". It never falls back to the system's trust. If the certificate authority changes, the operator updates `trustAnchors` and ships a build.
+- **Other sites** keep the system's trust; they open in Safari anyway.
 
 **The Members card lists each member's app instances.** Revoking one deletes its key, and so does removing or disabling the member. The app re-registers if Home Base says its key is unknown, for example after a reinstall or a new phone; App Attest keys don't survive either.
 
@@ -111,6 +133,16 @@ web view (page on H)        app (native)                Home Base on H          
 6 retry the identical request (section 8 or 9, as today)
 ```
 
+### Record transitions are atomic
+
+A record moves `pending → attested → done → taken`, and every change is a **conditional, atomic** write in the store:
+- `attest` commits only if the record is still `pending` and unexpired;
+- `options` commits only if it is still `attested`;
+- `finish` commits only if the record is still `attested` and unexpired, and `challenge` is still the record's current challenge;
+- `redeem` takes the record, so it's gone at once whatever happens next. A taken record never comes back, whatever an operation that started earlier writes afterwards.
+
+`options` replaces the record's `challenge`. A record has one live challenge, so two sheets or two `options` calls can't produce two finishes. The store needs `put`, `get`, a conditional `update(id, expectedState, change)` and `take(id)`. The library's default keeps records in memory; Home Base keeps them in its own store, with the same guarantees.
+
 ### 1–2. Begin (web view)
 
 The helper gets `401 step_up_required` for a request.
@@ -130,7 +162,7 @@ It then stores a record:
 | `user_id`, `hostname` | From the identity headers and this request |
 | `purpose`, `policy`, `kind`, `action` | As validated |
 | `created` | Records last **5 minutes** |
-| `state`, `result`, `keyId` | `pending`, nothing, nothing |
+| `state`, `result`, `keyId`, `challenge` | `pending`, nothing, nothing, nothing |
 
 It answers with:
 
@@ -229,6 +261,9 @@ window.sovereign = { version: 1, handoff(id) /* → Promise<void> */ };
 |---|---|
 | **A malicious app on the phone runs its own handoff** | It can begin a record, but the ceremony needs an `attested` record, and only a key App Attest issued for the household's App ID can attest. |
 | A malicious app gets the genuine app to attest its record | The app attests only `id`s from its own web view's household main frames, never from a URL scheme, a link or a notification. |
+| A relayed or intercepted copy of the genuine app is fed another client's `id` | Household trust: household hosts load only over chains to the pinned authorities, so a root the device owner installed can't stand in a forged page. Relaying traffic without breaking TLS reaches only real Home Base pages, which give the app records whose cookie lives in that app's own web view. |
+| `finish` and `redeem` race | Atomic record transitions: a taken record never returns. |
+| A genuine copy of the app on another phone registers as this member through a relay | It gains nothing usable. Any result it could get needs this member's passkey in a sheet on the relaying phone, which is the same exposure a browser on that phone has today. Registrations are audited and listed on the Members card for revoking. |
 | A malicious app redeems the genuine app's record | Redeeming needs the web view's `__Host-` correlation cookie, which only the web view's cookie jar holds. |
 | Another app intercepts the callback | The callback carries nothing. `ASWebAuthenticationSession` also takes it directly, without iOS's usual routing between apps. |
 | A sibling hostname begins, attests or redeems | The mutation guard (section 4.2) and strict isolation (4.1). |
@@ -260,12 +295,13 @@ They stay **separate registrations.** An app instance grants nothing on its own.
 
 Each is one PR touching few files.
 
-1. **sovereignAuth: App Attest verification.** Attestation and assertion checks, the pinned Apple root, and vectors from real device fixtures (spike 1). Shared with the iPhone approval key.
+1. **sovereignAuth: App Attest verification.** Attestation, receipt and assertion checks, the pinned Apple roots (attestation and receipt), and vectors from real device fixtures (spike 1). Shared with the iPhone approval key.
 2. **sovereignAuth: the handoff contract.** This section in the wire contract, and `createHandoff` (the record store and its checks). Vectors in `vectors/handoff.json`. The passkey service is Node-only, so there's no Python port.
 3. **Home Base: app instances.** The `nativeApp` setting, the `app/challenge` and `app/register` routes, and the Members card list with revoke.
 4. **Home Base: handoff routes.** `begin`, `attest`, `options`, `finish` and `redeem`, plus the sheet page, on Home Base's hostname and on sensitive apps' hostnames.
 5. **Home Base: the bridge branch** in `stepup.js` and in the admin unlock page.
 6. **sovereignShell:**
+   - household trust: pinned authorities for native requests and the web view;
    - registering the app instance;
    - `window.sovereign` version 1;
    - the `attest` call and the sheet;
@@ -277,6 +313,7 @@ Each is one PR touching few files.
 2. **Ephemeral sheet:** run a ceremony in an ephemeral `ASWebAuthenticationSession` with iCloud Keychain, 1Password and a YubiKey (NFC and USB-C). Fallback: a shared session, which shows iOS's sign-in alert each time.
 3. **The sheet's identity:** confirm the sheet's requests carry the same tailnet identity as the web view's. Spike c suggests they do.
 4. **Closing the sheet:** confirm that navigating to the custom scheme from the sheet page's script, after a `fetch`, closes the sheet. If iOS needs a tap for that, the sheet shows a "Return to the app" button.
+5. **Pinning the web view:** confirm the web view's server-trust handler sees every load from a household host, subresources included, so a refused chain blocks the page. If it doesn't, find out whether ATS `NSPinnedDomains` applies to `WKWebView`.
 
 ## Questions for the operator
 
