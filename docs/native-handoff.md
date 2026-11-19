@@ -1,6 +1,6 @@
 # Design: passkey checks for pages inside a native app (handoff)
 
-Status: **accepted**, 2026-11-18. Slices 1 and 2 are in the library. The contract is now section 13 of the [wire contract](wire-contract.md), which wins where the two differ. It adds the refusals `not_pending` (attesting a record twice) and `stale_challenge` (finishing on a challenge that isn't the live one), and the store's `update` takes the fields it expects, not just the state.
+Status: **accepted**, 2026-11-18; Parts 1 and 2 are built and verified on a phone. Part 3 (enrolling a passkey) is proposed, 2026-11-19. The contract is now section 13 of the [wire contract](wire-contract.md), which wins where the two differ. It adds the refusals `not_pending` (attesting a record twice) and `stale_challenge` (finishing on a challenge that isn't the live one), and the store's `update` takes the fields it expects, not just the state.
 
 ## The problem
 
@@ -285,7 +285,118 @@ As in section 10, **pages on the same origin are trusted.** A page on `H` could 
 
 Home Base's admin pages (unlock and enrollment) call the passkey API directly, not through `stepup.js`.
 - **In scope:** unlocking administration, which is a check on Home Base's hostname. Its page branches on the bridge the same way the helper does.
-- **Not in this design:** enrolling a passkey and activation (setup or recovery). They stay in a browser.
+- **Enrolling a passkey** while Home Base is active: Part 3.
+- **Not in this design:** activation, and enrolling in setup or recovery. They stay in a browser.
+
+## Part 3: enrolling a passkey in the app
+
+Proposed 2026-11-19 (the app's phase 4). The operator chose:
+- **every enrollment that runs while Home Base is active**, from the Passkeys panel in the app, not just the first one;
+- for a member with no passkey, **the administrator's grant keeps its code**, but nobody types it: the app scans it from the Members card, or takes it pasted. (Why the code stays is under "The grant keeps its code".)
+
+### What enrolling needs today
+
+Enrollment runs on Home Base's hostname only. `enroll/options` decides who may enroll, and `enroll/finish` stores the credential. In active Home Base there are three ways to do it:
+
+| Who | Authority | Where it comes from |
+|---|---|---|
+| A member with no usable passkey | `grant` | The administrator's 15-minute grant, presented as its code. It's used up when the registration verifies. |
+| A member adding another passkey | `recent-check` | A check in the last 5 minutes (`manage-own-credential`), read from the assurance cookie, at options and again at finish. |
+| The administrator | `every-time` | A hardware action token for `manage-admin-credential`, target `enroll:<member>`. It's used up when the ceremony starts, and the challenge is bound to the epochs it saw. |
+
+In the app's web view, the ceremony itself is the problem, as with checks. The authority is not: the cookie, the action token and the code are all in the web view, where the page runs.
+
+### The enroll handoff
+
+Enrolling is a third handoff purpose, `enroll`, on Home Base's hostname only. It's the same record, cookie, attest step and sheet as Part 2. These things differ:
+
+1. **Begin decides the authority.** `POST handoff/begin {purpose: "enroll", label, hardware, grant?}` makes the decision `enroll/options` makes today, from the web view's cookies and headers. If the member needs a check first, it answers `401 step_up_required` the same way. The page satisfies that through the handoff as a check, then begins again. An administrator's action token is used up here, as `enroll/options` uses it up today.
+
+   The record keeps:
+   - the authority (`grant`, `recent-check` or `every-time`), the label and `hardware`;
+   - the standing it was decided on: the epochs, and whether the member had a usable passkey;
+   - for `grant`, **which grant**: the hash of the code, which begin checks against the live grant without using it up;
+   - for `recent-check`, **the check's deadline**: its time plus 5 minutes.
+2. **The sheet registers.** `handoff/options` issues registration options: the existing enroll challenge, bound to the label, `hardware` and standing as today, with the handoff `id` beside them. The sheet calls `navigator.credentials.create`. Its summary says what is being added, from the record: "Add a passkey named *iPhone* to your Home Base account", or "Add an administrator passkey named *YubiKey 5C*". With `hardware`, it says hardware attestation is asked for. Nothing more: today a `hardware` registration that proves less is stored as the kind it proves, and the panel shows that kind afterwards.
+3. **Finish claims the record, then stores the credential.** See "Finish claims the record" below for the claim. It then re-reads the member's standing and refuses if any of these hold:
+   - the epochs moved, or the member is disabled or no longer active;
+   - the app instance that attested the record is gone, or no longer the member's;
+   - for `grant`: the member now has a usable passkey, or the grant on file isn't the one begin saw (reissued, used, or past its 15 minutes);
+   - for `recent-check`: the check's deadline has passed;
+   - for `every-time`: the member is no longer the administrator.
+
+   Then it verifies the registration as `enroll/finish` does. Verifying takes time, so the checks that can change meanwhile are made again **in the write that stores the credential**, which is conditional on all of them:
+   - the epochs and the state, as credential writes are today;
+   - the attesting app instance is still registered to the member. Removing an instance doesn't move the epochs, so this is checked on its own;
+   - for `grant`, the grant on file still has the hash begin saw. Using it up is part of the same write, so a grant reissued in between stops it.
+
+   The record's result is just `{kind, label}`.
+4. **Redeem only reports.** `handoff/redeem` takes the record and answers `{enrolled: {kind, label}}`. No cookie or token is involved; the page refreshes its list. The credential is already stored, so a redeem that never comes loses nothing.
+
+The wire field for the sheet's answer stays `assertion` in `handoff/finish`. For `enroll` it carries the registration response. The library reads the challenge from `clientDataJSON` either way.
+
+### Finish claims the record (all purposes)
+
+Today `finish` calls `verify` and only then commits `attested → done`. While `verify` runs, an `options` call can replace the challenge. For a check that is harmless: the losing finish's result is never stored, so it's never delivered. For `enroll`, `verify` itself stores a credential. Two finishes could then store two credentials under one authority, which matters most for an administrator's single every-time token.
+
+So `finish` first moves the record **`attested → finishing`**, conditional on the live challenge, and only then calls `verify`:
+- `options` refuses a `finishing` record (`not_attested`), so no second challenge exists;
+- `verify` succeeds and the record moves `finishing → done`; or it refuses, and the record stays `finishing` until it expires. The ceremony's challenge already gets one attempt, so nothing is lost; the member starts again.
+
+This changes the record transitions above for every purpose: `pending → attested → finishing → done → taken`.
+
+### The grant keeps its code
+
+The first design (2026-11-19) let the member's attested app use the grant with no code. Review found that this can be relayed:
+1. A malicious app on the member's phone tunnels the attacker's own copy of the household's genuine app through the phone's tailnet connection. Household trust still holds, because TLS runs end to end to Home Base.
+2. Registering an app instance needs only the tailnet identity, so the attacker's copy registers as the member. App Attest passes, because that copy is genuine.
+3. Inside the grant's 15 minutes, the attacker attests an enroll record and registers their own passkey on the member's account.
+
+Part 2 resists the same relay because a check still needs the member's own passkey. A first passkey has nothing of the member's to ask for. Only a step between the two people breaks the relay, and the code is that step.
+
+So the code stays, and the typing goes:
+- **The Members card** shows the code as a QR code beside the text. It holds `sovereign-grant/1`, Home Base's hostname and the code, on three lines.
+- **The app's "Add a passkey"** scans it, or takes it pasted. The app checks the hostname is its household's. It then opens the Passkeys panel in the web view with the code in the URL fragment (`#grant=<code>`), which never reaches a server log. The panel takes it from the fragment and clears the fragment at once.
+- **The code is never a link.** A URL scheme or a universal link could be claimed by another app, which would then hold the code and could relay again. The app scans the code itself.
+- **In person** it's one scan. **At a distance** the administrator sends the code and the member pastes it, as today, without the typing.
+
+`begin` checks the code against the live grant, so a wrong code fails before the sheet. It's still used up only when the registration verifies.
+
+### Telling the member
+
+`GET /api/home` adds `passkeyInvite: {expiresAt}` for a member with no usable passkey and a live grant. The launcher shows "Add a passkey" while it lasts, with Scan and Paste. Without an invite, the Passkeys panel is still in the app for adding more passkeys. The app's native part is the scanner and the card. The panel runs the handoff through the bridge the app already has.
+
+### Why this is safe
+
+Everything in Part 2's "Why this is safe" holds. In addition:
+- **Begin can't be skipped.** The authority is decided there, from the web view, and a sheet without an attested record gets nothing.
+- **Finish checks the authority again,** from the member's standing at that moment, and the attesting instance with it. A reissued or used grant, a revoked passkey (which moves the epochs), a removed app instance, an expired check, or a demotion all stop the registration.
+- **One record, one credential.** Finish claims the record before anything is stored.
+- **The challenge binds what was shown.** The label and `hardware` that the sheet summarizes are the ones in the challenge, so the sheet can't register something else.
+- **A first passkey needs the code,** passed between the administrator and the member, as in a browser.
+
+### Not in Part 3
+
+- **Activation, and enrolling in setup or recovery.** They rest on the passphrase session, and they're rare operator steps. They stay in a browser.
+- **One sheet for the administrator.** Adding an administrator passkey is two sheets: the hardware check that buys the action token, then the registration. That's the same two ceremonies Safari runs today.
+
+### Slices for Part 3
+
+1. **sovereignAuth:**
+   - `enroll` as a handoff purpose in `createHandoff`;
+   - the `finishing` claim;
+   - section 13 and the vectors.
+2. **Home Base, the routes:**
+   - the enroll handoff in `handoff-routes.js`, with the checks above;
+   - the conditional credential write in the directory (the instance, and the grant for `grant`);
+   - the sheet's registration branch.
+3. **Home Base, the pages:**
+   - the Passkeys panel enrolls through the bridge in the app, taking `#grant=`;
+   - the Members card's QR code (a small vendored encoder, served as a static file);
+   - `passkeyInvite` in `/api/home`.
+4. **sovereignShell:** the launcher's "Add a passkey" card, with the scanner (VisionKit) and Paste.
+
+**Check on the phone at the end:** creating a passkey in the ephemeral sheet with iCloud Keychain, 1Password and a YubiKey (`hardware`, with attestation). Phase 3 measured only assertions there. If a provider can't create in the sheet, that path falls back to Safari, as now.
 
 ## Relation to the iPhone approval key
 
