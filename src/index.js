@@ -1,3 +1,4 @@
+const { APP_ATTEST_ROOTS, AppAttestError, verifyAssertion, verifyAttestation } = require('./appattest');
 const { createRequestGuard, normalizeOrigin } = require('./guards');
 const { guardExpress, guardHttp, refusalBody } = require('./adapters');
 const { DEFAULT_SNAPSHOT_PATH, SnapshotError, createSnapshotReader, parseSnapshot, readOwnedFile, writeSnapshot } = require('./snapshot');
@@ -10,6 +11,8 @@ const { ATTESTATION_ROOTS, attestationRoot, createMemoryChallengeStore, createWe
 
 module.exports = {
   ACTION_HEADER,
+  APP_ATTEST_ROOTS,
+  AppAttestError,
   ATTESTATION_ROOTS,
   COOKIE_NAME,
   DEFAULT_SNAPSHOT_PATH,
@@ -46,6 +49,8 @@ module.exports = {
   resolveMember,
   sendAssuranceRefusal,
   signToken,
+  verifyAssertion,
+  verifyAttestation,
   verifyToken,
   writeSnapshot,
 };

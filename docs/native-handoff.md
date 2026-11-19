@@ -60,10 +60,14 @@ The app does this once, on first use, over the tailnet:
    - the AAGUID is the **production** environment. Development is refused unless the household turns it on; this is the iPhone hardware-key note's open decision 5. TestFlight and App Store builds are production.
    - the credential ID equals `keyId`, which equals `SHA-256` of the credential certificate's public key, as an X9.62 uncompressed point, compared as decoded bytes.
    - **the receipt** in the attestation verifies as Apple's guide requires:
-     - its signature and chain reach Apple's receipt root, which is a separate pin from the attestation root;
+     - its signature and chain reach Apple's receipt root (Apple Root CA G3), which is a separate pin from the attestation root;
+     - its signing certificate carries Apple's receipt-signing marker (`1.2.840.113635.100.12.15`), because G3 also issues certificates to developers;
      - its App ID equals `appId`;
-     - its attested public key equals the credential's;
+     - its attested certificate is the credential certificate;
+     - its client hash equals `clientDataHash`;
      - its creation time is within the challenge's 5 minutes.
+
+     A real receipt is CMS SignedData in BER, with indefinite lengths and its payload split across a constructed OCTET STRING, and has no signed attributes; one with signed attributes is refused.
 4. **Home Base stores** `{keyId, publicKey, counter: 0, receipt, user_id, created, label}`. The label is a device name the app sends, shown to people only. It audits the registration.
 
 Apple also offers an online fraud-metric refresh that exchanges the stored receipt with Apple's server. **Home Base doesn't use it.** It would be the only call from Home Base to Apple, and it adds no check this flow relies on.
@@ -295,7 +299,7 @@ They stay **separate registrations.** An app instance grants nothing on its own.
 
 Each is one PR touching few files.
 
-1. **sovereignAuth: App Attest verification.** Attestation, receipt and assertion checks, the pinned Apple roots (attestation and receipt), and vectors from real device fixtures (spike 1). Shared with the iPhone approval key.
+1. **sovereignAuth: App Attest verification.** Attestation, receipt and assertion checks, and the pinned Apple roots (attestation and receipt). The public tests use a fake Apple; real device output (spike 1) runs from a local file, because it names the App ID. Shared with the iPhone approval key.
 2. **sovereignAuth: the handoff contract.** This section in the wire contract, and `createHandoff` (the record store and its checks). Vectors in `vectors/handoff.json`. The passkey service is Node-only, so there's no Python port.
 3. **Home Base: app instances.** The `nativeApp` setting, the `app/challenge` and `app/register` routes, and the Members card list with revoke.
 4. **Home Base: handoff routes.** `begin`, `attest`, `options`, `finish` and `redeem`, plus the sheet page, on Home Base's hostname and on sensitive apps' hostnames.
