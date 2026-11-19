@@ -309,14 +309,24 @@ Each is one PR touching few files.
 
 ## Spikes before slice 1
 
-1. **App Attest on a TestFlight build:** attest, then assert several times. Verify in Node against the pinned root and Apple's validation-guide example, and capture fixtures for the vectors. The App ID needs the App Attest capability. (This is also spike 1 in the hardware-key note.)
-2. **Ephemeral sheet:** run a ceremony in an ephemeral `ASWebAuthenticationSession` with iCloud Keychain, 1Password and a YubiKey (NFC and USB-C). Fallback: a shared session, which shows iOS's sign-in alert each time.
-3. **The sheet's identity:** confirm the sheet's requests carry the same tailnet identity as the web view's. Spike c suggests they do.
-4. **Closing the sheet:** confirm that navigating to the custom scheme from the sheet page's script, after a `fetch`, closes the sheet. If iOS needs a tap for that, the sheet shows a "Return to the app" button.
-5. **Pinning the web view:** confirm the web view's server-trust handler sees every load from a household host, subresources included, so a refused chain blocks the page. If it doesn't, find out whether ATS `NSPinnedDomains` applies to `WKWebView`.
+Run on 2026-11-18 from a TestFlight build (iOS 26.7) on the operator's phone, with the App Attest capability on the App ID.
+
+| | Question | Result |
+|---|---|---|
+| 1 | Can the app attest a key and assert with it, in production? | **Yes.** A Node prototype of slice 1's checks passed all 22: the chain to Apple's App Attestation root, the nonce in the leaf, the key ID, `rpIdHash` = SHA-256(App ID), counter 0, the production AAGUID, the credential ID, a receipt (3,994 bytes), and three assertions with rising counters. The controls fail as they should: a wrong App ID, altered attestation client data, and altered assertion client data. |
+| 2 | Does a ceremony run in an ephemeral sheet? | **Yes**, with 1Password and a YubiKey over USB-C. iCloud Keychain, a YubiKey over NFC, and whether the sign-in alert is skipped weren't recorded. The sheet ended only when cancelled (`WebAuthenticationSession` error 1), as expected, because nothing returns to the app yet. |
+| 3 | Does the sheet carry the same tailnet identity? | **Yes:** the sheet's `/api/home` showed the same member as a native request. |
+| 4 | Does the sheet close itself? | Not run separately. It's covered by slice 4: the sheet page is Home Base's own, so it navigates to the callback and always shows a "Return to the app" button too. |
+| 5 | Does pinning hold in the web view? | **Yes.** With the anchors set to refuse everything, the web view's server-trust handler refused both challenges and the page didn't load (`NSURLErrorDomain` -999), and the native request was refused too. With the ISRG anchors, the native request passed on the chain *leaf ← YE2 ← Root YE ← ISRG Root X2*. The pinned web view's own load wasn't captured, because the second run overwrote it. |
+
+**What this changes:**
+- **The pin set** must accept the chain through Root YE. It does today, because Root YE is cross-signed by ISRG Root X2. Add Root YE (and Root YR) once Apple trusts them, ahead of Let's Encrypt dropping the cross-sign.
+- **Slice 1 parses the leaf's DER.** The prototype found the nonce by searching for bytes and first got the OID's length wrong. Real parsing finds the extension by its OID and checks its structure.
+- **Slice 1's vectors can't be the device fixtures.** They contain the App ID, which this repo doesn't publish. The public vectors are synthetic: a test root signs App Attest–shaped certificates, so every check, the negative ones included, runs in CI. A local test runs the real fixtures from a path outside the repo and is skipped when that path isn't set.
+- **Still to confirm on the phone**, without blocking slice 1: iCloud Keychain and a YubiKey over NFC in the ephemeral sheet; whether the sign-in alert is skipped; and the pinned web view loading normally.
 
 ## Decisions (operator, 2026-11-18)
 
 1. **App Attest environment: production only,** which covers TestFlight and the App Store. Development is an opt-in household setting, off by default. This also settles the hardware-key note's decision 5.
-2. **Ephemeral sheet:** yes, if spike 2 passes.
+2. **Ephemeral sheet:** yes. Spike 2 passed.
 3. **Scope:** checks and every-time actions now; enrolling a passkey from the app later.
