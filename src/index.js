@@ -1,5 +1,6 @@
 const { APP_ATTEST_ROOTS, AppAttestError, verifyAssertion, verifyAttestation } = require('./appattest');
 const { createRequestGuard, normalizeOrigin } = require('./guards');
+const { HANDOFF_COOKIE_PREFIX, appInstanceClientData, appInstanceReason, createHandoff, createMemoryHandoffStore, handoffClientData, handoffCookie } = require('./handoff');
 const { guardExpress, guardHttp, refusalBody } = require('./adapters');
 const { DEFAULT_SNAPSHOT_PATH, SnapshotError, createSnapshotReader, parseSnapshot, readOwnedFile, writeSnapshot } = require('./snapshot');
 const { authMode, createIdentity, requireSocketListen, resolveMember } = require('./identity');
@@ -16,16 +17,21 @@ module.exports = {
   ATTESTATION_ROOTS,
   COOKIE_NAME,
   DEFAULT_SNAPSHOT_PATH,
+  HANDOFF_COOKIE_PREFIX,
   OAUTH_COOKIE_NAME,
   POLICY,
   SnapshotError,
+  appInstanceClientData,
+  appInstanceReason,
   assuranceCookie,
   assuranceExpress,
   attestationRoot,
   authMode,
   createAssurance,
+  createHandoff,
   createIdentity,
   createMemoryChallengeStore,
+  createMemoryHandoffStore,
   createMemoryStateStore,
   createOAuthFlow,
   createRedeemer,
@@ -35,6 +41,8 @@ module.exports = {
   credentialKind,
   guardExpress,
   guardHttp,
+  handoffClientData,
+  handoffCookie,
   loadRoots,
   mergeCredentialUpdate,
   normalizeOrigin,

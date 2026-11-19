@@ -1,6 +1,6 @@
 # Design: passkey checks for pages inside a native app (handoff)
 
-Status: **proposed**, 2026-11-18. Nothing is implemented. Once it lands, it becomes section 13 of the [wire contract](wire-contract.md).
+Status: **accepted**, 2026-11-18. Slices 1 and 2 are in the library. The contract is now section 13 of the [wire contract](wire-contract.md), which wins where the two differ. It adds the refusals `not_pending` (attesting a record twice) and `stale_challenge` (finishing on a challenge that isn't the live one), and the store's `update` takes the fields it expects, not just the state.
 
 ## The problem
 

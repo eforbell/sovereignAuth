@@ -1,0 +1,998 @@
+{
+  "contract": "docs/wire-contract.md, section 13",
+  "description": "The native handoff's record checks. Each case loads \"record\" (the base record with \"record_set\" applied; null for none) into an empty store and \"instance\" (the base app instance with \"instance_set\" applied) as the only registered key, then runs \"step\" with the member \"member\" (a user ID; null for none), the hostname \"hostname\", the request \"headers\" (the base headers with \"headers_set\" applied; a null value removes the header) and the JSON body \"body\" (the step's base body with \"body_set\" applied; a null value removes the field), at \"now\". For options, Home Base issues a ceremony whose challenge is \"issued_challenge\"; for finish, Home Base's verification answers \"verify\" (default: ok, with the result \"token\"). \"expect\" is ok, or refused with the HTTP status, the error and the reason; \"state\" is the record's state afterwards (null: gone), \"challenge\" its challenge, \"instance_counter\" the key's stored counter. Assertions were made with the base instance's key, over the client data in \"client_data\". Redeem clears the handoff's cookie whenever the body names a handoff.",
+  "app_id": "ABCDE12345.org.example.homebase",
+  "scheme": "homebase",
+  "now": 1793300000000,
+  "issued_challenge": "CHALLENGE-issued",
+  "client_data": [
+    {
+      "name": "handoff",
+      "hostname": "smith-home.example-tailnet.ts.net",
+      "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+      "text": "sovereign-handoff/1\nsmith-home.example-tailnet.ts.net\nIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+      "sha256": "XgfaH+k8BgGnvDv5BlzWkYPAc6u2CJbhbJ2Cw69gKBc="
+    },
+    {
+      "name": "app instance",
+      "household": "smith",
+      "user_id": "1001",
+      "challenge": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXA",
+      "text": "sovereign-app-instance/1\nsmith\n1001\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXA",
+      "sha256": "QjKvaP/jiSNSRwq2eCTmCh5GrE0bHivye0yZ5RpUSIg="
+    }
+  ],
+  "cookies": [
+    {
+      "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+      "name": "__Host-sv_handoff_IIIIIIIIIIIIIIII",
+      "set_cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=300",
+      "clear_cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII=; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=0"
+    }
+  ],
+  "base": {
+    "record": {
+      "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+      "correlation": "ccccccccccccccccccccccccccccccccccccccccccc",
+      "userId": "1001",
+      "hostname": "smith-home.example-tailnet.ts.net",
+      "purpose": "check",
+      "policy": "open-admin",
+      "kind": "any",
+      "action": null,
+      "data": null,
+      "created": 1793299940000,
+      "state": "pending",
+      "keyId": null,
+      "challenge": null,
+      "result": null
+    },
+    "instance": {
+      "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+      "userId": "1001",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+We+61ZtGRIhlrwcY4JJ9AxhDiThuBox2YspMrg5pUdroPeTiekMyh9jX89IqzRRDGOc26p3meD7HAGEP4fyEQ==",
+      "counter": 0
+    },
+    "member": "1001",
+    "hostname": "smith-home.example-tailnet.ts.net",
+    "headers": {
+      "cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "body": {
+      "attest": {
+        "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "assertion": "omlzaWduYXR1cmVYRjBEAiBvdYSxg+Q2M4tIlTP1ifBPsCUbAmHj4tk2bGfH8gmZDgIgbqMiG77jIRiX1LvjQKl5S3V4KI0jU6/taJtgWf44S1RxYXV0aGVudGljYXRvckRhdGFYJXS+UoEYvPAAwjHK9LgodwnA8Kp7+bFJqQrHVmPyOCJRQAAAAAE="
+      },
+      "options": {
+        "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE"
+      },
+      "finish": {
+        "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
+        "assertion": {
+          "id": "credential-1",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiQ0hBTExFTkdFLWN1cnJlbnQiLCJvcmlnaW4iOiJodHRwczovL3NtaXRoLWhvbWUuZXhhbXBsZS10YWlsbmV0LnRzLm5ldCJ9"
+          }
+        }
+      },
+      "redeem": {
+        "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "attest: valid",
+      "step": "attest",
+      "expect": {
+        "ok": true,
+        "state": "attested",
+        "instance_counter": 1
+      }
+    },
+    {
+      "name": "attest: a counter well ahead",
+      "step": "attest",
+      "body_set": {
+        "assertion": "omlzaWduYXR1cmVYRzBFAiAC/euRzEIwuMmGanJ2fLd7N/vcCMI4g3voeY8EWnt+GgIhAIN0BOgjindFRTg17C8yQUkUJ9nHLdtNtCZ2uRIZdps8cWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAJ"
+      },
+      "expect": {
+        "ok": true,
+        "state": "attested",
+        "instance_counter": 9
+      }
+    },
+    {
+      "name": "attest: id not base64url",
+      "step": "attest",
+      "body_set": {
+        "id": "not an id"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: id not canonical",
+      "step": "attest",
+      "body_set": {
+        "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIF"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: keyId base64url, not base64",
+      "step": "attest",
+      "body_set": {
+        "keyId": "zH0DJT2jH5kvdrGhuZ8-AyTFySbUpI7sKKkqTMw-1V8"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: no assertion",
+      "step": "attest",
+      "body_set": {
+        "assertion": null
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: no record",
+      "step": "attest",
+      "record": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "unknown_handoff",
+        "state": null
+      }
+    },
+    {
+      "name": "attest: five minutes old",
+      "step": "attest",
+      "record_set": {
+        "created": 1793299700000
+      },
+      "expect": {
+        "ok": true,
+        "state": "attested",
+        "instance_counter": 1
+      }
+    },
+    {
+      "name": "attest: older than five minutes",
+      "step": "attest",
+      "record_set": {
+        "created": 1793299699999
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "expired",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: created in the future",
+      "step": "attest",
+      "record_set": {
+        "created": 1793300000001
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "expired",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: another member",
+      "step": "attest",
+      "member": "1002",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_member",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: no member",
+      "step": "attest",
+      "member": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_member",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: another hostname",
+      "step": "attest",
+      "hostname": "smith-pulse.example-tailnet.ts.net",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_hostname",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: already attested",
+      "step": "attest",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_pending",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "attest: already done",
+      "step": "attest",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_pending",
+        "state": "done"
+      }
+    },
+    {
+      "name": "attest: unknown key",
+      "step": "attest",
+      "body_set": {
+        "keyId": "KqULR8kjQt3aHcy3dOUOSX11ljLbLDqLhrManXN/gVE="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "unknown_key",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: key registered to another member",
+      "step": "attest",
+      "instance_set": {
+        "userId": "1002"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "wrong_member",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: signed by another key",
+      "step": "attest",
+      "body_set": {
+        "assertion": "omlzaWduYXR1cmVYRzBFAiBE92uxL3xNMQ0+XCkkbv2T0nCUux8wE15qgx4RxmPbbAIhAOfq2ZvQVtAGBQJWNvwLdr/5Bglwo1e/A6XcEmvpRsQTcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "bad_signature",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: over another handoff",
+      "step": "attest",
+      "body_set": {
+        "assertion": "omlzaWduYXR1cmVYRzBFAiEAvwb7DwgkIOu8a1q21A8Vfgzze590AQLTvqXeMmTdvuICIAajx3X9dIlRItYMqiyg8bBb7IaRibG0+889r6gTm+3mcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "bad_signature",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: over another hostname",
+      "step": "attest",
+      "body_set": {
+        "assertion": "omlzaWduYXR1cmVYRzBFAiEArWlk9M6FPdaYWBEIkjbfy5HlagC3svIX/SnQv5LstMwCIGbUZdS3x/z6ra5UI8CGjF1mkIJVW3tzz5fETOsm6ULlcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "bad_signature",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: for another app",
+      "step": "attest",
+      "body_set": {
+        "assertion": "omlzaWduYXR1cmVYRjBEAiB2nb+mVbGTJQkrMa+DKxvO3efdJ8gfnmXAP/EXCdTm6AIgar4kZP2CPEmyvDyRZdhgGK8YhZZIb7M9m12MDg9ZUQJxYXV0aGVudGljYXRvckRhdGFYJdUrGd4ae7L337iedVNYlVBS/LV55wUrRF1Al+a5JT6gQAAAAAE="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "wrong_app",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: counter not rising (replay)",
+      "step": "attest",
+      "instance_set": {
+        "counter": 1
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "app_instance_refused",
+        "reason": "counter_not_increasing",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "attest: assertion not CBOR",
+      "step": "attest",
+      "body_set": {
+        "assertion": "AAAA"
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "app_instance_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "options: valid",
+      "step": "options",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8="
+      },
+      "expect": {
+        "ok": true,
+        "state": "attested",
+        "challenge": "CHALLENGE-issued"
+      }
+    },
+    {
+      "name": "options: replaces the live challenge",
+      "step": "options",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": true,
+        "state": "attested",
+        "challenge": "CHALLENGE-issued"
+      }
+    },
+    {
+      "name": "options: not attested",
+      "step": "options",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "options: already done",
+      "step": "options",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "done"
+      }
+    },
+    {
+      "name": "options: another member",
+      "step": "options",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8="
+      },
+      "member": "1002",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_member",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "options: another hostname",
+      "step": "options",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8="
+      },
+      "hostname": "smith-pulse.example-tailnet.ts.net",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_hostname",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "options: expired",
+      "step": "options",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "created": 1793299699999
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "expired",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "options: no record",
+      "step": "options",
+      "record": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "unknown_handoff",
+        "state": null
+      }
+    },
+    {
+      "name": "options: no id",
+      "step": "options",
+      "body": {},
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "finish: valid",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": true,
+        "state": "done",
+        "return": "homebase://sovereign-auth/done"
+      }
+    },
+    {
+      "name": "finish: not attested",
+      "step": "finish",
+      "record_set": {
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "pending"
+      }
+    },
+    {
+      "name": "finish: already done",
+      "step": "finish",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "done"
+      }
+    },
+    {
+      "name": "finish: no options yet",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "stale_challenge",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: an earlier challenge",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-later"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "stale_challenge",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: another member",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "member": "1002",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_member",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: another hostname",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "hostname": "smith-pulse.example-tailnet.ts.net",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_hostname",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: expired",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "created": 1793299699999
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "expired",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: no record",
+      "step": "finish",
+      "record": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "unknown_handoff",
+        "state": null
+      }
+    },
+    {
+      "name": "finish: no client data",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "body_set": {
+        "assertion": {
+          "id": "credential-1",
+          "response": {}
+        }
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: client data not JSON",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "body_set": {
+        "assertion": {
+          "id": "credential-1",
+          "response": {
+            "clientDataJSON": "bm90IGpzb24"
+          }
+        }
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "finish: the passkey refused",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "verify": {
+        "ok": false,
+        "status": 403,
+        "body": {
+          "error": "step_up_refused",
+          "reason": "not_verified"
+        },
+        "reason": "not_verified"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "step_up_refused",
+        "reason": "not_verified",
+        "state": "attested"
+      }
+    },
+    {
+      "name": "redeem: valid",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "expect": {
+        "ok": true,
+        "state": null,
+        "result": "token"
+      }
+    },
+    {
+      "name": "redeem: among other cookies",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "theme=dark; __Host-sv_handoff_JJJJJJJJJJJJJJJJ=other; __Host-sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": true,
+        "state": null,
+        "result": "token"
+      }
+    },
+    {
+      "name": "redeem: not done",
+      "step": "redeem",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_done",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: still pending",
+      "step": "redeem",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_done",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: no record",
+      "step": "redeem",
+      "record": null,
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "unknown_handoff",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: expired",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token",
+        "created": 1793299699999
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "expired",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: another member",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "member": "1002",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_member",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: another hostname",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "hostname": "smith-pulse.example-tailnet.ts.net",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_hostname",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: no cookie",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": null
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "no_cookie",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: only another handoff's cookie",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "__Host-sv_handoff_JJJJJJJJJJJJJJJJ=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "no_cookie",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: the name without the prefix",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "no_cookie",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: two cookies",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc; __Host-sv_handoff_IIIIIIIIIIIIIIII=ccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "duplicate_cookie",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: an empty cookie",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_correlation",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: another correlation",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII=ddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_correlation",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: no id",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "body": {
+        "id": 42
+      },
+      "expect": {
+        "ok": false,
+        "status": 400,
+        "error": "handoff_refused",
+        "reason": "malformed",
+        "state": "done"
+      }
+    }
+  ]
+}
