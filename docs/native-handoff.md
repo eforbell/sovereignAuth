@@ -315,8 +315,8 @@ Each is one PR touching few files.
 4. **Closing the sheet:** confirm that navigating to the custom scheme from the sheet page's script, after a `fetch`, closes the sheet. If iOS needs a tap for that, the sheet shows a "Return to the app" button.
 5. **Pinning the web view:** confirm the web view's server-trust handler sees every load from a household host, subresources included, so a refused chain blocks the page. If it doesn't, find out whether ATS `NSPinnedDomains` applies to `WKWebView`.
 
-## Questions for the operator
+## Decisions (operator, 2026-11-18)
 
-1. **The App Attest environment:** production only, which covers TestFlight and the App Store, with development as an opt-in household setting. Recommended. This also answers the hardware-key note's decision 5.
-2. **The ephemeral sheet** (no "wants to use … to sign in" alert), if spike 2 passes. Recommended.
-3. **Scope:** checks and every-time actions now; enrolling a passkey from the app later. Recommended.
+1. **App Attest environment: production only,** which covers TestFlight and the App Store. Development is an opt-in household setting, off by default. This also settles the hardware-key note's decision 5.
+2. **Ephemeral sheet:** yes, if spike 2 passes.
+3. **Scope:** checks and every-time actions now; enrolling a passkey from the app later.
