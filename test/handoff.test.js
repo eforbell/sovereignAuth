@@ -73,7 +73,7 @@ test('handoff vectors', async (t) => {
       // A refused handoff never reaches the ceremony: no challenge issued, no assertion verified, no token minted.
       if (expect.error === 'handoff_refused') assert.deepEqual(calls, { issue: 0, verify: 0 });
       if (expect.return) assert.deepEqual(answer.body, { return: expect.return });
-      if (expect.result) assert.equal(answer.result, expect.result);
+      if (expect.result) assert.deepEqual(answer.result, expect.result);
       if (vector.step === 'redeem' && expect.reason !== 'malformed') assert.equal(answer.clearCookie, vectors.cookies[0].clear_cookie);
       const after = record && store.get(record.id);
       assert.equal(after ? after.state : null, expect.state);
@@ -165,7 +165,8 @@ test('begin refuses what Home Base should never pass', async () => {
   const good = { member: { userId: '1001' }, hostname: H, purpose: 'check', policy: 'open-admin', kind: 'any' };
   await assert.rejects(handoff.begin({ ...good, member: null }), /for a member/);
   await assert.rejects(handoff.begin({ ...good, hostname: 'Smith-Home.example.ts.net' }), /lower case/);
-  await assert.rejects(handoff.begin({ ...good, purpose: 'enroll' }), /check or an action/);
+  await assert.rejects(handoff.begin({ ...good, purpose: 'activate' }), /a check, an action or an enrollment/);
+  await assert.rejects(handoff.begin({ ...good, purpose: 'enroll', action: { target: 'x', digest: 'd'.repeat(43) } }), /an enrollment has no action/);
   await assert.rejects(handoff.begin({ ...good, policy: '' }), /names its policy/);
   await assert.rejects(handoff.begin({ ...good, kind: 'synced' }), /any or hardware/);
   await assert.rejects(handoff.begin({ ...good, action: { target: 'x', digest: 'd'.repeat(43) } }), /a check has no action/);
@@ -269,22 +270,49 @@ test('a lost compare-and-swap on the key refuses the attest', async () => {
   assert.equal(result.reason, 'counter_not_increasing');
 });
 
-test('options during a finish leaves the finish stale', async () => {
+test('options during a finish are refused: one record, one verify', async () => {
   const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
   await handoff.attest({ member, hostname: H, body: attestBody() });
   await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  let late;
   const finished = await handoff.finish({
     member,
     hostname: H,
     body: sheet('challenge-1'),
-    verify: async () => {
-      await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+    verify: async (record) => {
+      assert.equal(record.state, 'finishing');
+      late = await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
       return { ok: true, result: 'token' };
     },
   });
-  assert.equal(finished.reason, 'stale_challenge');
-  assert.equal(store.get(started.id).state, 'attested');
-  assert.equal(store.get(started.id).challenge, 'challenge-2');
+  assert.equal(late.reason, 'not_attested');
+  assert.equal(finished.ok, true);
+  assert.equal(store.get(started.id).state, 'done');
+  assert.equal(store.get(started.id).challenge, 'challenge-1');
+});
+
+test('two finishes at once verify once', async () => {
+  const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
+  await handoff.attest({ member, hostname: H, body: attestBody() });
+  await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  let verified = 0;
+  const verify = async () => { verified += 1; await new Promise((resolve) => setImmediate(resolve)); return { ok: true, result: 'enrolled' }; };
+  const answers = await Promise.all([1, 2].map(() => handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify })));
+  assert.equal(verified, 1);
+  assert.deepEqual(answers.map((answer) => answer.ok).sort(), [false, true]);
+  assert.equal(answers.find((answer) => !answer.ok).reason, 'not_attested');
+  assert.equal(store.get(started.id).state, 'done');
+});
+
+test('a refused verify leaves the record finishing: the challenge had its one attempt', async () => {
+  const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
+  await handoff.attest({ member, hostname: H, body: attestBody() });
+  await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  const refusal = { ok: false, status: 403, body: { error: 'step_up_refused', reason: 'not_verified' }, reason: 'not_verified' };
+  assert.deepEqual(await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => refusal }), refusal);
+  assert.equal(store.get(started.id).state, 'finishing');
+  assert.equal((await handoff.options({ member, hostname: H, body: { id: started.id }, issue })).reason, 'not_attested');
+  assert.equal((await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true, result: 'token' }) })).reason, 'not_attested');
 });
 
 test('options that lose to a finish leave the finished record alone', async () => {
@@ -359,5 +387,10 @@ test('options and finish need their callbacks to answer properly', async () => {
   await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
   await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1') }), /verify\(record, assertion\)/);
   await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true }) }), /result/);
-  await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => undefined }), /or a refusal/);
+  // The bad answer came after the claim: the record is used up.
+  assert.equal((await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true, result: 'token' }) })).reason, 'not_attested');
+  const again = await setUp();
+  await again.handoff.attest({ member: again.member, hostname: H, body: again.attestBody() });
+  await again.handoff.options({ member: again.member, hostname: H, body: { id: again.started.id }, issue: again.issue });
+  await assert.rejects(again.handoff.finish({ member: again.member, hostname: H, body: again.sheet('challenge-1'), verify: async () => undefined }), /or a refusal/);
 });

@@ -1,6 +1,6 @@
 {
   "contract": "docs/wire-contract.md, section 13",
-  "description": "The native handoff's record checks. Each case loads \"record\" (the base record with \"record_set\" applied; null for none) into an empty store and \"instance\" (the base app instance with \"instance_set\" applied) as the only registered key, then runs \"step\" with the member \"member\" (a user ID; null for none), the hostname \"hostname\", the request \"headers\" (the base headers with \"headers_set\" applied; a null value removes the header) and the JSON body \"body\" (the step's base body with \"body_set\" applied; a null value removes the field), at \"now\". For options, Home Base issues a ceremony whose challenge is \"issued_challenge\"; for finish, Home Base's verification answers \"verify\" (default: ok, with the result \"token\"). \"expect\" is ok, or refused with the HTTP status, the error and the reason; \"state\" is the record's state afterwards (null: gone), \"challenge\" its challenge, \"instance_counter\" the key's stored counter. Assertions were made with the base instance's key, over the client data in \"client_data\". Redeem clears the handoff's cookie whenever the body names a handoff.",
+  "description": "The native handoff's record checks. Each case loads \"record\" (the base record with \"record_set\" applied; null for none) into an empty store and \"instance\" (the base app instance with \"instance_set\" applied) as the only registered key, then runs \"step\" with the member \"member\" (a user ID; null for none), the hostname \"hostname\", the request \"headers\" (the base headers with \"headers_set\" applied; a null value removes the header) and the JSON body \"body\" (the step's base body with \"body_set\" applied; a null value removes the field), at \"now\". For options, Home Base issues a ceremony whose challenge is \"issued_challenge\"; for finish, Home Base's verification answers \"verify\" (default: ok, with the result \"token\"). \"expect\" is ok, or refused with the HTTP status, the error and the reason; \"state\" is the record's state afterwards (null: gone; a record moves pending, attested, finishing, done, and finish claims it as finishing before Home Base verifies), \"challenge\" its challenge, \"instance_counter\" the key's stored counter. Assertions were made with the base instance's key, over the client data in \"client_data\". Redeem clears the handoff's cookie whenever the body names a handoff.",
   "app_id": "ABCDE12345.org.example.homebase",
   "scheme": "homebase",
   "now": 1793300000000,
@@ -447,6 +447,22 @@
       }
     },
     {
+      "name": "options: while finishing",
+      "step": "options",
+      "record_set": {
+        "state": "finishing",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "finishing"
+      }
+    },
+    {
       "name": "options: another member",
       "step": "options",
       "record_set": {
@@ -525,6 +541,38 @@
         "state": "attested",
         "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
         "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": true,
+        "state": "done",
+        "return": "homebase://sovereign-auth/done"
+      }
+    },
+    {
+      "name": "finish: an enrollment",
+      "step": "finish",
+      "record_set": {
+        "state": "attested",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "purpose": "enroll",
+        "policy": "enroll"
+      },
+      "body_set": {
+        "assertion": {
+          "id": "credential-1",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiQ0hBTExFTkdFLWN1cnJlbnQiLCJvcmlnaW4iOiJodHRwczovL3NtaXRoLWhvbWUuZXhhbXBsZS10YWlsbmV0LnRzLm5ldCJ9",
+            "attestationObject": "o2NmbXRkbm9uZQ"
+          }
+        }
+      },
+      "verify": {
+        "ok": true,
+        "result": {
+          "kind": "synced",
+          "label": "iPhone"
+        }
       },
       "expect": {
         "ok": true,
@@ -725,7 +773,23 @@
         "status": 403,
         "error": "step_up_refused",
         "reason": "not_verified",
-        "state": "attested"
+        "state": "finishing"
+      }
+    },
+    {
+      "name": "finish: already finishing",
+      "step": "finish",
+      "record_set": {
+        "state": "finishing",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_attested",
+        "state": "finishing"
       }
     },
     {
@@ -762,6 +826,29 @@
       }
     },
     {
+      "name": "redeem: an enrollment",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "purpose": "enroll",
+        "policy": "enroll",
+        "result": {
+          "kind": "synced",
+          "label": "iPhone"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "state": null,
+        "result": {
+          "kind": "synced",
+          "label": "iPhone"
+        }
+      }
+    },
+    {
       "name": "redeem: not done",
       "step": "redeem",
       "record_set": {
@@ -780,6 +867,22 @@
     {
       "name": "redeem: still pending",
       "step": "redeem",
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "not_done",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: still finishing",
+      "step": "redeem",
+      "record_set": {
+        "state": "finishing",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current"
+      },
       "expect": {
         "ok": false,
         "status": 403,
