@@ -303,7 +303,11 @@ function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }
   const [contentType, wrapped] = parts(parse(buf, 'receipt'), 0x30, 'receipt ContentInfo', 2);
   if (oid(buf, contentType) !== OID.signedData) fail('receipt', 'the receipt is not SignedData');
   // SignedData: version, digestAlgorithms, encapContentInfo, [0] certificates, signerInfos.
-  const [, , encapsulated, bag, signerInfos] = parts(parts(wrapped, 0xa0, 'receipt content', 1)[0], 0x30, 'SignedData', 5);
+  const [version, digestAlgorithms, encapsulated, bag, signerInfos] = parts(parts(wrapped, 0xa0, 'receipt content', 1)[0], 0x30, 'SignedData', 5);
+  if (integer(buf, version) !== 1) fail('receipt', 'the receipt is not SignedData version 1');
+  for (const algorithm of parts(digestAlgorithms, 0x31, 'receipt digest algorithms', 1, 4)) {
+    if (oid(buf, parts(algorithm, 0x30, 'receipt digest algorithm', 1, 2)[0]) !== OID.sha256) fail('receipt', 'the receipt digests with something other than SHA-256');
+  }
   const [encapsulatedType, encapsulatedContent] = parts(encapsulated, 0x30, 'receipt encapsulated content', 2);
   if (oid(buf, encapsulatedType) !== OID.data) fail('receipt', 'the receipt content is not data');
   const payload = octets(buf, parts(encapsulatedContent, 0xa0, 'receipt payload', 1)[0]);
@@ -315,7 +319,8 @@ function verifyReceipt(buf, { appId, credentialDer, hash, issuedAt, now, roots }
   // parts and no more: signed or unsigned attributes would make six or seven.
   const signer = parts(signers[0], 0x30, 'receipt signer', 1, 7);
   if (signer.length !== 5) fail('receipt', 'the receipt signer has attributes');
-  const [, sid, digestAlgorithm, signatureAlgorithm, signatureNode] = signer;
+  const [signerVersion, sid, digestAlgorithm, signatureAlgorithm, signatureNode] = signer;
+  if (integer(buf, signerVersion) !== 1) fail('receipt', 'the receipt signer is not version 1');
   if (oid(buf, parts(digestAlgorithm, 0x30, 'receipt digest algorithm', 1, 2)[0]) !== OID.sha256
     || oid(buf, parts(signatureAlgorithm, 0x30, 'receipt signature algorithm', 1, 2)[0]) !== OID.ecdsaSha256) {
     fail('receipt', 'the receipt is not signed with ECDSA and SHA-256');

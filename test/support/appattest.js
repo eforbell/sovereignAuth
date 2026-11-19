@@ -108,21 +108,23 @@ function receipt({ fields, signer, chain, form = 'der', signedAttributes = false
   if (badSignature) signature = crypto.sign('sha256', Buffer.concat([payload, Buffer.from([0])]), signer.key);
   const algorithm = (id) => tlv(0x30, oid(id), Buffer.from([0x05, 0x00]));
   const attributes = signedAttributes ? [tlv(0xa0, tlv(0x30, oid(OID.contentType), tlv(0x31, oid(OID.data))))] : [];
-  const one = tlv(0x30, int(1), issuerAndSerial(signer.der), algorithm(wrong.digestOid || OID.sha256), ...attributes, tlv(0x30, oid(wrong.signatureOid || OID.ecdsaSha256)), tlv(0x04, signature));
+  const one = tlv(0x30, wrong.signerVersion || int(1), issuerAndSerial(signer.der), algorithm(wrong.digestOid || OID.sha256), ...attributes, tlv(0x30, oid(wrong.signatureOid || OID.ecdsaSha256)), tlv(0x04, signature));
   const signerInfo = wrong.twoSigners ? Buffer.concat([one, one]) : wrong.signerNotSequence ? tlv(0x04, one) : one;
   const signedDataOid = wrong.outerOid || oid(OID.signedData);
   const dataOid = oid(wrong.contentOid || OID.data);
+  const version = wrong.signedDataVersion || int(1);
+  const digests = wrong.digestsAsSequence ? tlv(0x30, algorithm(OID.sha256)) : tlv(0x31, algorithm(wrong.digestsOid || OID.sha256));
   const certificates = (wrong.dropSigner ? chain.slice(1) : chain).map((c) => c.der);
   if (form === 'ber') {
     const pieces = [payload.subarray(0, 40), payload.subarray(40)].map((piece) => tlv(0x04, piece));
     return open(0x30, signedDataOid, open(0xa0, open(0x30,
-      int(1), tlv(0x31, algorithm(OID.sha256)),
+      version, digests,
       open(0x30, dataOid, open(0xa0, open(0x24, ...pieces))),
       open(0xa0, ...certificates),
       tlv(0x31, signerInfo))));
   }
   return tlv(0x30, signedDataOid, tlv(0xa0, tlv(0x30,
-    int(1), tlv(0x31, algorithm(OID.sha256)),
+    version, digests,
     tlv(0x30, dataOid, tlv(0xa0, tlv(0x04, payload))),
     tlv(0xa0, ...certificates),
     tlv(0x31, signerInfo))));
