@@ -325,7 +325,12 @@ Enrolling is a third handoff purpose, `enroll`, on Home Base's hostname only. It
    - for `recent-check`: the check's deadline has passed;
    - for `every-time`: the member is no longer the administrator.
 
-   Then it verifies the registration as `enroll/finish` does. For `grant`, using up that exact grant and storing the credential are **one write**, conditional on the grant's hash, so a grant reissued in between stops it. The record's result is just `{kind, label}`.
+   Then it verifies the registration as `enroll/finish` does. Verifying takes time, so the checks that can change meanwhile are made again **in the write that stores the credential**, which is conditional on all of them:
+   - the epochs and the state, as credential writes are today;
+   - the attesting app instance is still registered to the member. Removing an instance doesn't move the epochs, so this is checked on its own;
+   - for `grant`, the grant on file still has the hash begin saw. Using it up is part of the same write, so a grant reissued in between stops it.
+
+   The record's result is just `{kind, label}`.
 4. **Redeem only reports.** `handoff/redeem` takes the record and answers `{enrolled: {kind, label}}`. No cookie or token is involved; the page refreshes its list. The credential is already stored, so a redeem that never comes loses nothing.
 
 The wire field for the sheet's answer stays `assertion` in `handoff/finish`. For `enroll` it carries the registration response. The library reads the challenge from `clientDataJSON` either way.
@@ -383,7 +388,7 @@ Everything in Part 2's "Why this is safe" holds. In addition:
    - section 13 and the vectors.
 2. **Home Base, the routes:**
    - the enroll handoff in `handoff-routes.js`, with the checks above;
-   - the conditional grant-and-credential write in the directory;
+   - the conditional credential write in the directory (the instance, and the grant for `grant`);
    - the sheet's registration branch.
 3. **Home Base, the pages:**
    - the Passkeys panel enrolls through the bridge in the app, taking `#grant=`;
