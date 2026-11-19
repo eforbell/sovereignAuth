@@ -77,7 +77,7 @@ test('handoff vectors', async (t) => {
       if (vector.step === 'redeem' && expect.reason !== 'malformed') assert.equal(answer.clearCookie, vectors.cookies[0].clear_cookie);
       const after = record && store.get(record.id);
       assert.equal(after ? after.state : null, expect.state);
-      if (expect.challenge) assert.equal(after.challenge, expect.challenge);
+      if (expect.challenge !== undefined) assert.equal(after.challenge, expect.challenge);
       if (expect.instance_counter !== undefined) assert.equal(instances.keys.get(instance.keyId).counter, expect.instance_counter);
     });
   }
@@ -304,15 +304,60 @@ test('two finishes at once verify once', async () => {
   assert.equal(store.get(started.id).state, 'done');
 });
 
-test('a refused verify leaves the record finishing: the challenge had its one attempt', async () => {
+test('a refused verify hands the record back for another try', async () => {
   const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
   await handoff.attest({ member, hostname: H, body: attestBody() });
   await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
-  const refusal = { ok: false, status: 403, body: { error: 'step_up_refused', reason: 'not_verified' }, reason: 'not_verified' };
+  const refusal = { ok: false, status: 403, body: { error: 'step_up_refused', reason: 'insufficient_kind' }, reason: 'insufficient_kind' };
   assert.deepEqual(await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => refusal }), refusal);
+  assert.equal(store.get(started.id).state, 'attested');
+  assert.equal(store.get(started.id).challenge, null);
+  // The refused challenge is spent; the sheet asks for new options and tries again.
+  assert.equal((await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true, result: 'token' }) })).reason, 'stale_challenge');
+  await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  assert.equal((await handoff.finish({ member, hostname: H, body: sheet('challenge-2'), verify: async () => ({ ok: true, result: 'token' }) })).ok, true);
+  assert.equal(store.get(started.id).state, 'done');
+});
+
+test('a verify that throws leaves the record finishing', async () => {
+  const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
+  await handoff.attest({ member, hostname: H, body: attestBody() });
+  await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => { throw new Error('store down'); } }), /store down/);
   assert.equal(store.get(started.id).state, 'finishing');
   assert.equal((await handoff.options({ member, hostname: H, body: { id: started.id }, issue })).reason, 'not_attested');
-  assert.equal((await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true, result: 'token' }) })).reason, 'not_attested');
+});
+
+test('options between finish\'s read and its claim leave the finish stale, unverified', async () => {
+  const { handoff, member, started, attestBody, issue, sheet, store } = await setUp();
+  await handoff.attest({ member, hostname: H, body: attestBody() });
+  await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
+  const update = store.update;
+  store.update = (id, expected, change) => {
+    store.update = update;
+    update(id, { state: 'attested' }, { challenge: 'challenge-2' });
+    return update(id, expected, change);
+  };
+  let verified = 0;
+  const finished = await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => { verified += 1; return { ok: true, result: 'token' }; } });
+  assert.equal(finished.reason, 'stale_challenge');
+  assert.equal(verified, 0);
+  assert.equal(store.get(started.id).state, 'attested');
+  assert.equal(store.get(started.id).challenge, 'challenge-2');
+});
+
+test('a record that expires while verify runs is finished but never redeemed', async () => {
+  let clock = vectors.now;
+  const store = createMemoryHandoffStore({ now: () => clock });
+  const record = { ...vectors.base.record, state: 'attested', keyId: vectors.base.instance.keyId, challenge: 'CHALLENGE-current' };
+  store.put(record);
+  const handoff = createHandoff({ appId: APP_ID, scheme: vectors.scheme, store, instances: memoryInstances([vectors.base.instance]), now: () => clock });
+  const member = { userId: vectors.base.member };
+  const finished = await handoff.finish({ member, hostname: H, body: vectors.base.body.finish, verify: async () => { clock += 300001; return { ok: true, result: 'token' }; } });
+  assert.equal(finished.ok, true);
+  const redeemed = await handoff.redeem({ member, hostname: H, headers: vectors.base.headers, body: vectors.base.body.redeem });
+  assert.equal(redeemed.reason, 'expired');
+  assert.equal(store.get(record.id), null);
 });
 
 test('options that lose to a finish leave the finished record alone', async () => {

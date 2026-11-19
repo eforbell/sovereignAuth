@@ -266,9 +266,11 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
   // was enrolled) or a refusal to send as it is. No cookie is set in the sheet: the result waits on the
   // record. For an enrollment, assertion is the registration response.
   //
-  // The record is claimed (attested -> finishing) before verify runs, so one record gets one verify: verify
-  // may store something (an enrollment does), and a second challenge can't be issued meanwhile. A verify
-  // that refuses or throws leaves the record finishing until it expires; its challenge had one attempt.
+  // The record is claimed (attested -> finishing) before verify runs, so one verify runs at a time and a
+  // second challenge can't be issued meanwhile: verify may store something (an enrollment does). verify
+  // refuses only when it stored nothing, so a refusal hands the record back, attested with no live
+  // challenge, and the sheet can ask for new options and try again. A verify that throws leaves the record
+  // finishing until it expires.
   async function finish({ member, hostname, body, verify }) {
     if (typeof verify !== 'function') throw new Error('finish needs verify(record, assertion)');
     const id = idOf(body);
@@ -287,7 +289,10 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
     }
     const verified = await verify(view({ ...record, state: 'finishing' }), body.assertion);
     if (!verified || typeof verified !== 'object') throw new Error('verify returns { ok: true, result } or a refusal');
-    if (verified.ok !== true) return verified;
+    if (verified.ok !== true) {
+      await store.update(id, { state: 'finishing', challenge }, { state: 'attested', challenge: null });
+      return verified;
+    }
     if (verified.result === undefined || verified.result === null) throw new Error('verify returns { ok: true, result }');
     // A redeem can take the record while verify runs. The result is then never stored, so a token minted
     // is never delivered (an enrollment is stored all the same; only its report is lost).
