@@ -401,7 +401,7 @@ All five are JSON `POST`s on `H` under `/_sovereign/auth/handoff/`, behind the m
 
 5. **`redeem`** (the page, once the sheet has closed): `{id}`, with the handoff's cookie. The record is **taken first**, so it is gone whatever happens next. It must be `done` (`not_done`), and the handoff's cookie must be there once (`no_cookie`, `duplicate_cookie`) and equal `correlation` (`wrong_correlation`). On success Home Base sets `__Host-sv_assurance` for a check, or answers `{"token": "<action token>"}` for an action. Every answer that names a handoff clears its cookie (`Max-Age=0`).
 
-No step issues a challenge or verifies a passkey for a record that isn't `attested`: a refused record never reaches the ceremony.
+No step issues a challenge or verifies a passkey for a record that wasn't `attested` when the step read it. A record taken by a `redeem` while that runs gets nothing from it: its challenge is never recorded and its result never stored, so nothing minted is delivered.
 
 Refusals: `{"error": "handoff_refused", "reason": …}` with `malformed`, `unknown_handoff`, `expired`, `wrong_member`, `wrong_hostname`, `not_pending`, `not_attested`, `stale_challenge`, `not_done`, `no_cookie`, `duplicate_cookie` or `wrong_correlation`.
 

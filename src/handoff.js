@@ -176,6 +176,8 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
   }
 
   const idOf = (body) => (canonical(body?.id, ID, 'base64url') ? body.id : null);
+  // What the caller sees of a record: everything but the correlation, which only the page's cookie holds.
+  const view = ({ correlation, ...rest }) => rest;
 
   // 1-2. From the page, after Home Base has made the same checks its options route makes. purpose is
   // 'check' or 'action'; kind is 'any' or 'hardware'; action is { target, digest } for an action and null
@@ -249,11 +251,13 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
     const record = await store.get(id);
     const wrong = holds(record, request);
     if (wrong) return refuse(wrong);
+    // Checked on the record as read: a redeem can still take it while issue runs, and then the challenge
+    // issued is never recorded, so nothing comes of it.
     if (record.state !== 'attested') return refuse('not_attested');
-    const issued = await issue(record);
+    const issued = await issue(view(record));
     if (typeof issued?.challenge !== 'string' || !issued.challenge) throw new Error('issue(record) returns the ceremony\'s options, with its challenge');
     if (!(await store.update(id, { state: 'attested' }, { challenge: issued.challenge }))) return lost(id, request, 'attested');
-    return { ok: true, record: { ...record, challenge: issued.challenge }, options: issued };
+    return { ok: true, record: view({ ...record, challenge: issued.challenge }), options: issued };
   }
 
   // 3b. From the sheet, after its tap: verify(record, assertion) runs Home Base's finish for the ceremony and
@@ -270,8 +274,11 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
     if (wrong) return refuse(wrong);
     if (record.state !== 'attested') return refuse('not_attested');
     if (record.challenge === null || !sameText(record.challenge, challenge)) return refuse('stale_challenge');
-    const verified = await verify(record, body.assertion);
-    if (!verified?.ok) return verified;
+    // As in options, a redeem can take the record while verify runs. The result is then never stored, so
+    // the token minted is never delivered.
+    const verified = await verify(view(record), body.assertion);
+    if (!verified || typeof verified !== 'object') throw new Error('verify returns { ok: true, result } or a refusal');
+    if (verified.ok !== true) return verified;
     if (verified.result === undefined || verified.result === null) throw new Error('verify returns { ok: true, result }');
     if (!(await store.update(id, { state: 'attested', challenge }, { state: 'done', result: verified.result }))) {
       const current = await store.get(id);
@@ -293,7 +300,7 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
     if (wrong) return refuse(wrong, { clearCookie });
     if (record.state !== 'done') return refuse('not_done', { clearCookie });
     const cookie = handoffCookie(headers, id);
-    if (!cookie.value) return refuse(cookie.reason, { clearCookie });
+    if (cookie.reason) return refuse(cookie.reason, { clearCookie });
     if (!sameText(cookie.value, record.correlation)) return refuse('wrong_correlation', { clearCookie });
     return { ok: true, purpose: record.purpose, policy: record.policy, action: record.action, data: record.data, result: record.result, clearCookie };
   }

@@ -50,7 +50,7 @@
     "instance": {
       "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
       "userId": "1001",
-      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIv4klNS6bjSTgPxHzP6C7zRbKYlwB3D+uy/rKHNNMI9zVfZn063I7bS77O/1mmiNxP3v/5jMqOXCQXfOqtMe7A==",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+We+61ZtGRIhlrwcY4JJ9AxhDiThuBox2YspMrg5pUdroPeTiekMyh9jX89IqzRRDGOc26p3meD7HAGEP4fyEQ==",
       "counter": 0
     },
     "member": "1001",
@@ -62,7 +62,7 @@
       "attest": {
         "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE",
         "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
-        "assertion": "omlzaWduYXR1cmVYRjBEAiBb3+UPkv7zbgj/BAtT0m5IbHw4nPUGa48sYScl+ORo8AIgOEM2yqRx86R72cu8zPSOLTA0lMqsBTka2z/txbYZai9xYXV0aGVudGljYXRvckRhdGFYJXS+UoEYvPAAwjHK9LgodwnA8Kp7+bFJqQrHVmPyOCJRQAAAAAE="
+        "assertion": "omlzaWduYXR1cmVYRjBEAiBvdYSxg+Q2M4tIlTP1ifBPsCUbAmHj4tk2bGfH8gmZDgIgbqMiG77jIRiX1LvjQKl5S3V4KI0jU6/taJtgWf44S1RxYXV0aGVudGljYXRvckRhdGFYJXS+UoEYvPAAwjHK9LgodwnA8Kp7+bFJqQrHVmPyOCJRQAAAAAE="
       },
       "options": {
         "id": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIE"
@@ -95,7 +95,7 @@
       "name": "attest: a counter well ahead",
       "step": "attest",
       "body_set": {
-        "assertion": "omlzaWduYXR1cmVYRzBFAiEA2nU8z8GQL+6Uf60jtb6s4V83I1P9ixgpjJ91lN27l/MCIFJV9w/wDXtaF2jO9bSjLt9AvzNTQIQBO4WZwjsm82KOcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAJ"
+        "assertion": "omlzaWduYXR1cmVYRzBFAiAC/euRzEIwuMmGanJ2fLd7N/vcCMI4g3voeY8EWnt+GgIhAIN0BOgjindFRTg17C8yQUkUJ9nHLdtNtCZ2uRIZdps8cWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAJ"
       },
       "expect": {
         "ok": true,
@@ -311,7 +311,7 @@
       "name": "attest: signed by another key",
       "step": "attest",
       "body_set": {
-        "assertion": "omlzaWduYXR1cmVYRzBFAiBORtb7yOAG3DcpTIROd9l8ca5kMsW0og/psA0DbiH1yAIhANEqAGdjcib8KbLcZW1HL0i53EByEWIppHndHQ2PjkdwcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
+        "assertion": "omlzaWduYXR1cmVYRzBFAiBE92uxL3xNMQ0+XCkkbv2T0nCUux8wE15qgx4RxmPbbAIhAOfq2ZvQVtAGBQJWNvwLdr/5Bglwo1e/A6XcEmvpRsQTcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
       },
       "expect": {
         "ok": false,
@@ -325,7 +325,7 @@
       "name": "attest: over another handoff",
       "step": "attest",
       "body_set": {
-        "assertion": "omlzaWduYXR1cmVYSDBGAiEAhXqVLdSGgCCC7ajIYv4R0hX7y8P700XgQLsreqt6xDMCIQDRfnFCQYYB2lsh1yS8Hg2SySZ3eTrcUY4S3dyeZnZQYnFhdXRoZW50aWNhdG9yRGF0YVgldL5SgRi88ADCMcr0uCh3CcDwqnv5sUmpCsdWY/I4IlFAAAAAAQ=="
+        "assertion": "omlzaWduYXR1cmVYRzBFAiEAvwb7DwgkIOu8a1q21A8Vfgzze590AQLTvqXeMmTdvuICIAajx3X9dIlRItYMqiyg8bBb7IaRibG0+889r6gTm+3mcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
       },
       "expect": {
         "ok": false,
@@ -339,7 +339,7 @@
       "name": "attest: over another hostname",
       "step": "attest",
       "body_set": {
-        "assertion": "omlzaWduYXR1cmVYRzBFAiEAwINwqqBksqN9gTLbbcdUwyuuq6LAmxu3YvoGIUvjnscCICnub8tHHlMnp9EG5baH9Pu8KhDBmvF7RrqBrdmVwmxbcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
+        "assertion": "omlzaWduYXR1cmVYRzBFAiEArWlk9M6FPdaYWBEIkjbfy5HlagC3svIX/SnQv5LstMwCIGbUZdS3x/z6ra5UI8CGjF1mkIJVW3tzz5fETOsm6ULlcWF1dGhlbnRpY2F0b3JEYXRhWCV0vlKBGLzwAMIxyvS4KHcJwPCqe/mxSakKx1Zj8jgiUUAAAAAB"
       },
       "expect": {
         "ok": false,
@@ -353,7 +353,7 @@
       "name": "attest: for another app",
       "step": "attest",
       "body_set": {
-        "assertion": "omlzaWduYXR1cmVYRzBFAiAuBX+VaS4q3+a9hg6iJbgIzGmB4Crv442nwVuc/IgxTQIhAIHncqqIxjE+6VNt6spg91R3VPHN7rmYPBznNn7sSwvDcWF1dGhlbnRpY2F0b3JEYXRhWCXVKxneGnuy99+4nnVTWJVQUvy1eecFK0RdQJfmuSU+oEAAAAAB"
+        "assertion": "omlzaWduYXR1cmVYRjBEAiB2nb+mVbGTJQkrMa+DKxvO3efdJ8gfnmXAP/EXCdTm6AIgar4kZP2CPEmyvDyRZdhgGK8YhZZIb7M9m12MDg9ZUQJxYXV0aGVudGljYXRvckRhdGFYJdUrGd4ae7L337iedVNYlVBS/LV55wUrRF1Al+a5JT6gQAAAAAE="
       },
       "expect": {
         "ok": false,
@@ -931,6 +931,26 @@
         "status": 403,
         "error": "handoff_refused",
         "reason": "duplicate_cookie",
+        "state": null
+      }
+    },
+    {
+      "name": "redeem: an empty cookie",
+      "step": "redeem",
+      "record_set": {
+        "state": "done",
+        "keyId": "zH0DJT2jH5kvdrGhuZ8+AyTFySbUpI7sKKkqTMw+1V8=",
+        "challenge": "CHALLENGE-current",
+        "result": "token"
+      },
+      "headers_set": {
+        "cookie": "__Host-sv_handoff_IIIIIIIIIIIIIIII="
+      },
+      "expect": {
+        "ok": false,
+        "status": 403,
+        "error": "handoff_refused",
+        "reason": "wrong_correlation",
         "state": null
       }
     },

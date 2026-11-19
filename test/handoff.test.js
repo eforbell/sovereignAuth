@@ -106,6 +106,7 @@ test('client data and cookies match the vectors', () => {
   assert.equal(crypto.createHash('sha256').update(registering).digest('base64'), instance.sha256);
   const [cookie] = vectors.cookies;
   assert.deepEqual(handoffCookie({ cookie: `${cookie.name}=x` }, cookie.id), { value: 'x', reason: null });
+  assert.deepEqual(handoffCookie({ cookie: `${cookie.name}=` }, cookie.id), { value: '', reason: null });
 });
 
 test('client data refuses what could be read two ways', () => {
@@ -229,10 +230,12 @@ test('a handoff runs end to end once', async () => {
   assert.equal(options.ok, true);
   assert.equal(options.options.challenge, 'challenge-1');
   assert.equal(options.record.policy, 'open-admin');
+  assert.equal(options.record.correlation, undefined);
   let seen;
   const finished = await handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async (record, assertion) => { seen = { record, assertion }; return { ok: true, result: 'assurance-token' }; } });
   assert.deepEqual(finished, { ok: true, body: { return: 'homebase://sovereign-auth/done' } });
   assert.equal(seen.record.id, started.id);
+  assert.equal(seen.record.correlation, undefined);
   assert.equal(seen.assertion.id, 'credential-1');
   const redeemed = await handoff.redeem({ member, hostname: H, headers: { cookie }, body: { id: started.id } });
   assert.equal(redeemed.ok, true);
@@ -356,4 +359,5 @@ test('options and finish need their callbacks to answer properly', async () => {
   await handoff.options({ member, hostname: H, body: { id: started.id }, issue });
   await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1') }), /verify\(record, assertion\)/);
   await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => ({ ok: true }) }), /result/);
+  await assert.rejects(handoff.finish({ member, hostname: H, body: sheet('challenge-1'), verify: async () => undefined }), /or a refusal/);
 });
