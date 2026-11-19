@@ -173,6 +173,29 @@ const { counter } = verifyAssertion({ assertion, clientData, appId, publicKey: k
 
 The attestation must chain to Apple's App Attestation root, and its receipt to Apple Root CA G3, signed by a certificate with Apple's receipt-signing marker. Both roots are pinned in `src/appattest-roots.json`. Only `production` is accepted unless `environments` includes `development`. The receipt must name the same app, key and client data, and be created after `issuedAt` and within the last five minutes. Store the new `counter` atomically: a counter that doesn't rise is a replay. Every refusal is an `AppAttestError` with a `code`.
 
+## Native handoff
+
+For a page inside the household's iPhone app, whose web view can't run a passkey ceremony: the page begins a record, the app attests it with App Attest, a Safari sheet runs the ceremony, and the page redeems the result (wire contract, section 13). The library keeps the records and makes every check on them; Home Base runs the ceremony, mints the result and keeps the app instances' keys. Node only.
+
+```js
+const { createHandoff, appInstanceClientData, appInstanceReason } = require('sovereign-auth');
+
+const handoff = createHandoff({
+  appId: 'TEAMID1234.org.example.homebase',
+  scheme: 'homebase',
+  store,      // put, get, update(id, expected, change), take: each atomic (default: in memory)
+  instances,  // get(keyId) -> { userId, publicKey, counter }; advance(keyId, from, to) -> compare-and-swap
+});
+
+const { body, setCookie } = await handoff.begin({ member, hostname, purpose: 'check', policy, kind });
+await handoff.attest({ member, hostname, body });                              // from the app
+await handoff.options({ member, hostname, body, issue: async (record) => ceremonyOptions(record) });
+await handoff.finish({ member, hostname, body, verify: async (record, assertion) => ({ ok: true, result }) });
+const redeemed = await handoff.redeem({ member, hostname, headers, body });   // { ok, purpose, result, clearCookie }
+```
+
+Every step answers `{ ok: true, … }` or `{ ok: false, status, body, reason }` to send as it is. `issue` and `verify` run only for an `attested` record; bind the handoff `id` into the ceremony's action as well. Registering an app instance uses `verifyAttestation` over `appInstanceClientData({ household, userId, challenge })`, and `appInstanceReason(error)` gives the wire reason for an `AppAttestError`.
+
 ## Python
 
 `python/` holds the port for Python apps (D13), installed from the same pinned commit:

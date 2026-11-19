@@ -13,6 +13,7 @@ Decisions referred to as D1–D23 are in Home Base's Feature-10 PRD (`planning/f
 | 6–9. Tokens, assurance cookie, step-up, action tokens | **Verified** by the app (`verifyToken`, `createAssurance`, `createRedeemer`), policy matrix in `src/policy.json`, vectors in `vectors/assurance.json`; issued and redeemed by Home Base from SID-005 |
 | 10. OAuth callbacks | **Implemented** (`createOAuthFlow`), vectors in `vectors/oauth.json` |
 | 11. Passkey ceremonies and credential kinds | **Implemented** (`createWebAuthn`), pinned roots in `src/attestation-roots.json`; run by Home Base's passkey service from SID-005 |
+| 13. Native handoff | **Implemented** in the library (`createHandoff`, `verifyAttestation`, `verifyAssertion`), pinned Apple roots in `src/appattest-roots.json`, vectors in `vectors/handoff.json`; Home Base's routes and the app come next |
 
 Everything marked "contract only" may still change before its implementation lands; the version number changes once a host runs it.
 
@@ -335,3 +336,73 @@ Refusal reasons: `malformed`, `unknown_challenge`, `expired`, `wrong_ceremony`, 
 ## 12. Conformance vectors
 
 `vectors/*.json` are language-neutral. Each file describes how to build the thing under test and lists cases with their expected outcome. A port must pass every file unchanged; a new case is added here first, then to every implementation.
+
+## 13. Native handoff
+
+A page in the household's native app runs in a web view that can't run section 11's ceremonies (its RP ID is a domain no app can claim). The page hands the ceremony to a Safari sheet on the same phone and gets the result back, and only the household's genuine app, proved by App Attest, can take part. The design and its threat model are in [native-handoff.md](native-handoff.md); this section is what Home Base, the app and the page agree on. The ceremony itself is section 11's, unchanged, and the results are section 7's cookie and section 9's action token, unchanged. Node only: the passkey service has no port.
+
+### App instances
+
+An app instance is one installation of the app on one phone, registered to one member. It grants nothing on its own: it only lets that installation attest a handoff. Home Base's `nativeApp` setting names the app (`<TEAMID>.<bundle id>`) and its callback scheme (`^[a-z][a-z0-9+.-]{2,31}$`); without it, there is no handoff.
+
+The app registers a key with App Attest over this client data (the app passes its SHA-256 to `attestKey`):
+
+```
+sovereign-app-instance/1\n<household>\n<user_id>\n<challenge>
+```
+
+`challenge` is 32 random bytes from Home Base, bound to the member and hostname and lasting 5 minutes. Home Base verifies the attestation with `verifyAttestation` (production only unless the household allows development) and stores `{keyId, publicKey, counter, receipt, user_id, created, label}`.
+
+To attest a handoff `id` on hostname `H`, the app signs this client data with `generateAssertion`:
+
+```
+sovereign-handoff/1\n<H>\n<id>
+```
+
+Home Base verifies it with `verifyAssertion` against the key, which must belong to the member, and stores the new counter with a compare-and-swap: the write succeeds only if the stored counter is still the one the check read. A counter that doesn't rise, or a write that loses, is refused.
+
+Refusals: `{"error": "app_instance_refused", "reason": …}` with `malformed`, `unknown_challenge`, `expired`, `wrong_member`, `wrong_hostname`, `untrusted_attestation`, `wrong_app`, `wrong_environment`, `unknown_key`, `bad_signature` or `counter_not_increasing`. `appInstanceReason` maps an `AppAttestError` to its reason.
+
+### Records
+
+| Field | |
+| --- | --- |
+| `id`, `correlation` | 32 random bytes each, base64url |
+| `userId`, `hostname` | The member and the hostname `begin` came in on |
+| `purpose` | `check` or `action` |
+| `policy`, `kind` | The section 8 policy key; `any` or `hardware` |
+| `action` | `{target, digest}` for an action, `null` for a check |
+| `data` | Home Base's own, returned at each step |
+| `created` | A record lasts **5 minutes** |
+| `state` | `pending` → `attested` → `done` → taken |
+| `keyId`, `challenge`, `result` | Set by `attest`, `options` and `finish` |
+
+A store provides `put(record)`, `get(id)`, `update(id, expected, change)` and `take(id)`, each one atomic step. `update` applies `change` only if the record exists and every field in `expected` still has that value, and never creates a record. `take` returns a record at most once, ever. So a step that read the record and then loses a race to another step changes nothing, and a taken record never comes back.
+
+Every step checks, in this order: the record exists (`unknown_handoff`), it is at most 5 minutes old and not from the future (`expired`), the caller resolves to its member (`wrong_member`) and the request came in on its hostname (`wrong_hostname`). Then it checks the state, then its own conditions. A malformed body is refused with 400, everything else with 403.
+
+### Steps
+
+All five are JSON `POST`s on `H` under `/_sovereign/auth/handoff/`, behind the mutation guard (section 4.2).
+
+1. **`begin`** (the page, after a `401 step_up_required`): `{purpose: "check"}` or `{purpose: "action", action: {policy, target, digest}}`. Home Base makes the same checks its options route makes for that purpose on that hostname, then stores a `pending` record and answers `{"id": "<id>"}` with:
+
+   ```
+   Set-Cookie: __Host-sv_handoff_<first 16 characters of id>=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=300
+   ```
+
+   Each handoff has its own cookie name, so two in flight don't overwrite each other.
+
+2. **`attest`** (the app, natively): `{id, keyId, assertion}`. The record must be `pending` (`not_pending`). Then the key must be registered (`unknown_key`) to this member (`wrong_member`), the assertion must verify over the handoff client data, and the counter must rise (all `app_instance_refused`). On success the record becomes `attested`, with `keyId`.
+
+3. **`options`** (the sheet, before its tap): `{id}`. The record must be `attested` (`not_attested`). Home Base issues a section 11 authentication challenge with the handoff `id` in its action binding, and answers it with a summary of what will be confirmed, written from the record. The new challenge replaces the record's `challenge` only while the record is still `attested`, so a record has one live challenge.
+
+4. **`finish`** (the sheet, after its tap): `{id, assertion}`. The record must be `attested` (`not_attested`), and the assertion's `clientDataJSON` challenge must be the record's live one (`stale_challenge`). Only then does Home Base verify the assertion as section 11 does and mint the result: the assurance token for a check, the action token for an action. A refusal there is Home Base's own and leaves the record `attested`. The record becomes `done`, with the result, only if it is still `attested` with that same challenge. No cookie is set in the sheet. The answer is `{"return": "<scheme>://sovereign-auth/done"}`, which the sheet navigates to so it closes. The callback carries nothing.
+
+5. **`redeem`** (the page, once the sheet has closed): `{id}`, with the handoff's cookie. The record is **taken first**, so it is gone whatever happens next. It must be `done` (`not_done`), and the handoff's cookie must be there once (`no_cookie`, `duplicate_cookie`) and equal `correlation` (`wrong_correlation`). On success Home Base sets `__Host-sv_assurance` for a check, or answers `{"token": "<action token>"}` for an action. Every answer that names a handoff clears its cookie (`Max-Age=0`).
+
+No step issues a challenge or verifies a passkey for a record that isn't `attested`: a refused record never reaches the ceremony.
+
+Refusals: `{"error": "handoff_refused", "reason": …}` with `malformed`, `unknown_handoff`, `expired`, `wrong_member`, `wrong_hostname`, `not_pending`, `not_attested`, `stale_challenge`, `not_done`, `no_cookie`, `duplicate_cookie` or `wrong_correlation`.
+
+`createHandoff({ appId, scheme, store, instances })` implements the records and every check above; vectors are in `vectors/handoff.json`.
