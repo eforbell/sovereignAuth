@@ -339,7 +339,7 @@ Refusal reasons: `malformed`, `unknown_challenge`, `expired`, `wrong_ceremony`, 
 
 ## 13. Native handoff
 
-A page in the household's native app runs in a web view that can't run section 11's ceremonies (its RP ID is a domain no app can claim). The page hands the ceremony to a Safari sheet on the same phone and gets the result back, and only the household's genuine app, proved by App Attest, can take part. The design and its threat model are in [native-handoff.md](native-handoff.md); this section is what Home Base, the app and the page agree on. The ceremony itself is section 11's, unchanged, and the results are section 7's cookie and section 9's action token, unchanged. Node only: the passkey service has no port.
+A page in the household's native app runs in a web view that can't run section 11's ceremonies (its RP ID is a domain no app can claim). The page hands the ceremony to a Safari sheet on the same phone and gets the result back, and only the household's genuine app, proved by App Attest, can take part. The design and its threat model are in [native-handoff.md](native-handoff.md); this section is what Home Base, the app and the page agree on. The ceremony itself is section 11's, unchanged, and the results are section 7's cookie and section 9's action token, unchanged. An enrollment (on Home Base's hostname only) registers a passkey through the same steps, and its result is the stored credential. Node only: the passkey service has no port.
 
 ### App instances
 
@@ -369,12 +369,12 @@ Refusals: `{"error": "app_instance_refused", "reason": …}` with `malformed`, `
 | --- | --- |
 | `id`, `correlation` | 32 random bytes each, base64url |
 | `userId`, `hostname` | The member and the hostname `begin` came in on |
-| `purpose` | `check` or `action` |
+| `purpose` | `check`, `action` or `enroll` |
 | `policy`, `kind` | The section 8 policy key; `any` or `hardware` |
-| `action` | `{target, digest}` for an action, `null` for a check |
-| `data` | Home Base's own, returned at each step |
+| `action` | `{target, digest}` for an action, `null` otherwise |
+| `data` | Home Base's own, returned at each step. For `enroll`: the authority it decided on, which `finish` checks again |
 | `created` | A record lasts **5 minutes** |
-| `state` | `pending` → `attested` → `done` → taken |
+| `state` | `pending` → `attested` → `finishing` → `done` → taken |
 | `keyId`, `challenge`, `result` | Set by `attest`, `options` and `finish` |
 
 A store provides `put(record)`, `get(id)`, `update(id, expected, change)` and `take(id)`, each one atomic step. `update` applies `change` only if the record exists and every field in `expected` still has that value, and never creates a record. `take` returns a record at most once, ever. So a step that read the record and then loses a race to another step changes nothing, and a taken record never comes back.
@@ -385,7 +385,7 @@ Every step checks, in this order: the record exists (`unknown_handoff`), it is a
 
 All five are JSON `POST`s on `H` under `/_sovereign/auth/handoff/`, behind the mutation guard (section 4.2).
 
-1. **`begin`** (the page, after a `401 step_up_required`): `{purpose: "check"}` or `{purpose: "action", action: {policy, target, digest}}`. Home Base makes the same checks its options route makes for that purpose on that hostname, then stores a `pending` record and answers `{"id": "<id>"}` with:
+1. **`begin`** (the page, after a `401 step_up_required`, or to enroll): `{purpose: "check"}`, `{purpose: "action", action: {policy, target, digest}}` or, on Home Base's hostname, `{purpose: "enroll", label, hardware, grant?}`. Home Base makes the same checks its options route makes for that purpose on that hostname (for `enroll`, the authority `enroll/options` decides, which may itself answer `401 step_up_required`), then stores a `pending` record and answers `{"id": "<id>"}` with:
 
    ```
    Set-Cookie: __Host-sv_handoff_<first 16 characters of id>=<correlation>; Secure; HttpOnly; Path=/; SameSite=Strict; Max-Age=300
@@ -395,13 +395,13 @@ All five are JSON `POST`s on `H` under `/_sovereign/auth/handoff/`, behind the m
 
 2. **`attest`** (the app, natively): `{id, keyId, assertion}`. The record must be `pending` (`not_pending`). Then the key must be registered (`unknown_key`) to this member (`wrong_member`), the assertion must verify over the handoff client data, and the counter must rise (all `app_instance_refused`). On success the record becomes `attested`, with `keyId`.
 
-3. **`options`** (the sheet, before its tap): `{id}`. The record must be `attested` (`not_attested`). Home Base issues a section 11 authentication challenge with the handoff `id` in its action binding, and answers it with a summary of what will be confirmed, written from the record. The new challenge replaces the record's `challenge` only while the record is still `attested`, so a record has one live challenge.
+3. **`options`** (the sheet, before its tap): `{id}`. The record must be `attested` (`not_attested`). Home Base issues a section 11 challenge with the handoff `id` in its action binding (authentication; registration for `enroll`), and answers it with a summary of what will be confirmed, written from the record. The new challenge replaces the record's `challenge` only while the record is still `attested`, so a record has one live challenge.
 
-4. **`finish`** (the sheet, after its tap): `{id, assertion}`. The record must be `attested` (`not_attested`), and the assertion's `clientDataJSON` challenge must be the record's live one (`stale_challenge`). Only then does Home Base verify the assertion as section 11 does and mint the result: the assurance token for a check, the action token for an action. A refusal there is Home Base's own and leaves the record `attested`. The record becomes `done`, with the result, only if it is still `attested` with that same challenge. No cookie is set in the sheet. The answer is `{"return": "<scheme>://sovereign-auth/done"}`, which the sheet navigates to so it closes. The callback carries nothing.
+4. **`finish`** (the sheet, after its tap): `{id, assertion}`; for `enroll`, `assertion` is the registration response. The record must be `attested` (`not_attested`), and the assertion's `clientDataJSON` challenge must be the record's live one (`stale_challenge`). The record is then **claimed**: it becomes `finishing` only if it is still `attested` with that same challenge. A step that loses that write gets `stale_challenge` while the record is still `attested` with another challenge, and otherwise what the record says now (`not_attested`, or `unknown_handoff` once it's taken). Only then does Home Base verify the response as section 11 does and make the result: the assurance token for a check, the action token for an action, or, for `enroll`, the stored credential (`{kind, label}`), after checking its authority again. While it runs, `options` and other finishes get `not_attested`. A refusal there is Home Base's own, and Home Base refuses only when it stored nothing: the record goes back to `attested` with no live challenge, so the sheet can fetch new options and try again. An error leaves it `finishing` until it expires. On success the record becomes `done`, with the result. No cookie is set in the sheet. The answer is `{"return": "<scheme>://sovereign-auth/done"}`, which the sheet navigates to so it closes. The callback carries nothing.
 
-5. **`redeem`** (the page, once the sheet has closed): `{id}`, with the handoff's cookie. The record is **taken first**, so it is gone whatever happens next. It must be `done` (`not_done`), and the handoff's cookie must be there once (`no_cookie`, `duplicate_cookie`) and equal `correlation` (`wrong_correlation`). On success Home Base sets `__Host-sv_assurance` for a check, or answers `{"token": "<action token>"}` for an action. Every answer that names a handoff clears its cookie (`Max-Age=0`).
+5. **`redeem`** (the page, once the sheet has closed): `{id}`, with the handoff's cookie. The record is **taken first**, so it is gone whatever happens next. It must be `done` (`not_done`), and the handoff's cookie must be there once (`no_cookie`, `duplicate_cookie`) and equal `correlation` (`wrong_correlation`). On success Home Base sets `__Host-sv_assurance` for a check, answers `{"token": "<action token>"}` for an action, or answers `{"enrolled": {kind, label}}` for `enroll`. Every answer that names a handoff clears its cookie (`Max-Age=0`).
 
-No step issues a challenge or verifies a passkey for a record that wasn't `attested` when the step read it. A record taken by a `redeem` while that runs gets nothing from it: its challenge is never recorded and its result never stored, so nothing minted is delivered.
+No step issues a challenge or verifies a passkey for a record that wasn't `attested` when the step read it, and no two verifications of a record overlap. A record taken by a `redeem` while that runs gets nothing from it: its challenge is never recorded and its result never stored, so nothing minted is delivered. (An enrollment's credential is stored all the same; only the report of it is lost.)
 
 Refusals: `{"error": "handoff_refused", "reason": …}` with `malformed`, `unknown_handoff`, `expired`, `wrong_member`, `wrong_hostname`, `not_pending`, `not_attested`, `stale_challenge`, `not_done`, `no_cookie`, `duplicate_cookie` or `wrong_correlation`.
 

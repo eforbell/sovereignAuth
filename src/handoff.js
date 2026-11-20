@@ -1,13 +1,13 @@
-// The native handoff (wire contract, section 13): a passkey check or every-time action asked for by a page in
-// the household's native app, whose web view can't run the ceremony. The page begins a record, the app
+// The native handoff (wire contract, section 13): a passkey check, every-time action or enrollment asked for by
+// a page in the household's native app, whose web view can't run the ceremony. The page begins a record, the app
 // attests it with App Attest, a Safari sheet runs the ceremony against it, and the page redeems the result.
 //
 // This module keeps the records and makes every check on them. Home Base keeps the rest: which purposes a
 // hostname may begin, the ceremony itself (createWebAuthn, with the handoff id in the challenge's binding),
 // minting the cookie or token, and the app instances' keys.
 //
-// A record moves pending -> attested -> done -> taken, and each move is one conditional write in the store,
-// so racing calls can't both win and a taken record never comes back.
+// A record moves pending -> attested -> finishing -> done -> taken, and each move is one conditional write in
+// the store, so racing calls can't both win and a taken record never comes back.
 
 const crypto = require('node:crypto');
 const { AppAttestError, verifyAssertion } = require('./appattest');
@@ -180,15 +180,16 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
   const view = ({ correlation, ...rest }) => rest;
 
   // 1-2. From the page, after Home Base has made the same checks its options route makes. purpose is
-  // 'check' or 'action'; kind is 'any' or 'hardware'; action is { target, digest } for an action and null
-  // for a check. data is the caller's own, returned with the record at each later step.
+  // 'check', 'action' or 'enroll'; kind is 'any' or 'hardware'; action is { target, digest } for an action
+  // and null otherwise. data is the caller's own, returned with the record at each later step: for an
+  // enrollment, the authority Home Base decided on, which its finish checks again.
   async function begin({ member, hostname, purpose, policy, kind, action = null, data = null }) {
     if (!member?.userId) throw new Error('a handoff begins for a member');
     if (typeof hostname !== 'string' || !HOSTNAME.test(hostname)) throw new Error('a handoff begins on a hostname, in lower case');
-    if (purpose !== 'check' && purpose !== 'action') throw new Error('a handoff is for a check or an action');
+    if (!['check', 'action', 'enroll'].includes(purpose)) throw new Error('a handoff is for a check, an action or an enrollment');
     if (typeof policy !== 'string' || !policy) throw new Error('a handoff names its policy');
     if (kind !== 'any' && kind !== 'hardware') throw new Error('kind is any or hardware');
-    if (purpose === 'check' && action !== null) throw new Error('a check has no action');
+    if (purpose !== 'action' && action !== null) throw new Error(`${purpose === 'check' ? 'a check' : 'an enrollment'} has no action`);
     if (purpose === 'action' && (typeof action?.target !== 'string' || /[\r\n]/.test(action.target) || typeof action?.digest !== 'string' || !DIGEST.test(action.digest))) {
       throw new Error('an action is { target, digest }');
     }
@@ -261,8 +262,15 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
   }
 
   // 3b. From the sheet, after its tap: verify(record, assertion) runs Home Base's finish for the ceremony and
-  // mints the result, returning { ok: true, result } (the assurance cookie's token, or the action token) or
-  // a refusal to send as it is. No cookie is set in the sheet: the result waits on the record.
+  // mints the result, returning { ok: true, result } (the assurance cookie's token, the action token, or what
+  // was enrolled) or a refusal to send as it is. No cookie is set in the sheet: the result waits on the
+  // record. For an enrollment, assertion is the registration response.
+  //
+  // The record is claimed (attested -> finishing) before verify runs, so one verify runs at a time and a
+  // second challenge can't be issued meanwhile: verify may store something (an enrollment does). verify
+  // refuses only when it stored nothing, so a refusal hands the record back, attested with no live
+  // challenge, and the sheet can ask for new options and try again. A verify that throws leaves the record
+  // finishing until it expires.
   async function finish({ member, hostname, body, verify }) {
     if (typeof verify !== 'function') throw new Error('finish needs verify(record, assertion)');
     const id = idOf(body);
@@ -274,17 +282,21 @@ function createHandoff({ appId, scheme, store = createMemoryHandoffStore(), inst
     if (wrong) return refuse(wrong);
     if (record.state !== 'attested') return refuse('not_attested');
     if (record.challenge === null || !sameText(record.challenge, challenge)) return refuse('stale_challenge');
-    // As in options, a redeem can take the record while verify runs. The result is then never stored, so
-    // the token minted is never delivered.
-    const verified = await verify(view(record), body.assertion);
-    if (!verified || typeof verified !== 'object') throw new Error('verify returns { ok: true, result } or a refusal');
-    if (verified.ok !== true) return verified;
-    if (verified.result === undefined || verified.result === null) throw new Error('verify returns { ok: true, result }');
-    if (!(await store.update(id, { state: 'attested', challenge }, { state: 'done', result: verified.result }))) {
+    if (!(await store.update(id, { state: 'attested', challenge }, { state: 'finishing' }))) {
       const current = await store.get(id);
       if (current?.state === 'attested') return refuse('stale_challenge');
       return lost(id, request, 'attested');
     }
+    const verified = await verify(view({ ...record, state: 'finishing' }), body.assertion);
+    if (!verified || typeof verified !== 'object') throw new Error('verify returns { ok: true, result } or a refusal');
+    if (verified.ok !== true) {
+      await store.update(id, { state: 'finishing', challenge }, { state: 'attested', challenge: null });
+      return verified;
+    }
+    if (verified.result === undefined || verified.result === null) throw new Error('verify returns { ok: true, result }');
+    // A redeem can take the record while verify runs. The result is then never stored, so a token minted
+    // is never delivered (an enrollment is stored all the same; only its report is lost).
+    if (!(await store.update(id, { state: 'finishing' }, { state: 'done', result: verified.result }))) return lost(id, request, 'attested');
     return { ok: true, body: { return: returnUrl } };
   }
 

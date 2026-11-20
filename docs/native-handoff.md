@@ -1,6 +1,6 @@
 # Design: passkey checks for pages inside a native app (handoff)
 
-Status: **accepted**, 2026-11-18; Parts 1 and 2 are built and verified on a phone. Part 3 (enrolling a passkey) is proposed, 2026-11-19. The contract is now section 13 of the [wire contract](wire-contract.md), which wins where the two differ. It adds the refusals `not_pending` (attesting a record twice) and `stale_challenge` (finishing on a challenge that isn't the live one), and the store's `update` takes the fields it expects, not just the state.
+Status: **accepted**, 2026-11-18; Parts 1 and 2 are built and verified on a phone. Part 3 (enrolling a passkey) is accepted, 2026-11-19; slice 1 is in the library. The contract is now section 13 of the [wire contract](wire-contract.md), which wins where the two differ. It adds the refusals `not_pending` (attesting a record twice) and `stale_challenge` (finishing on a challenge that isn't the live one), and the store's `update` takes the fields it expects, not just the state.
 
 ## The problem
 
@@ -341,7 +341,9 @@ Today `finish` calls `verify` and only then commits `attested → done`. While `
 
 So `finish` first moves the record **`attested → finishing`**, conditional on the live challenge, and only then calls `verify`:
 - `options` refuses a `finishing` record (`not_attested`), so no second challenge exists;
-- `verify` succeeds and the record moves `finishing → done`; or it refuses, and the record stays `finishing` until it expires. The ceremony's challenge already gets one attempt, so nothing is lost; the member starts again.
+- `verify` succeeds and the record moves `finishing → done`;
+- or it refuses, which it does only when it stored nothing. The record goes back to `attested` with no live challenge, so the sheet can ask for new options and try again, as it does today after the wrong passkey;
+- or it throws, and the record stays `finishing` until it expires.
 
 This changes the record transitions above for every purpose: `pending → attested → finishing → done → taken`.
 
